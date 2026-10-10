@@ -152,12 +152,6 @@
     const k = Math.min(kx, ky), cx = lockX ? 50 : bb.x + bb.width / 2, cy = lockY ? 50 : bb.y + bb.height / 2;
     return list.map((s) => transform(s, k, cx, cy, 50, 50));
   }
-  // Puts `sh` where `old` was: same centre, longest side as long as old's.
-  function placeLike(sh, old) {
-    const a = measure(shapePath(old)), b = measure(shapePath(sh));
-    const k = Math.max(a.width, a.height) / Math.max(b.width, b.height, 0.01);
-    return { ...transform(sh, k, b.x + b.width / 2, b.y + b.height / 2, a.x + a.width / 2, a.y + a.height / 2), mirror: old.mirror };
-  }
   const presetShapes = (name) => (Object.hasOwn(FIXED, name)
     ? [{ fixed: name, a: 1, x: 0, y: 0, mirror: 'none' }]
     : [{ pts: fit(PRESETS[name]()), mirror: 'none' }]);
@@ -400,7 +394,7 @@
         h.setAttribute('x', c.x - 2); h.setAttribute('y', c.y - 2);
       });
     }
-    $('se-fit-shape').hidden = $('se-mirror').hidden = !moving;
+    $('se-fit-tools').hidden = $('se-mirror').hidden = !moving;
     for (const b of $('se-mirror').querySelectorAll('button')) b.setAttribute('aria-pressed', b.dataset.mirror === shapes[active].mirror);
 
     renderCards();
@@ -642,6 +636,14 @@
 
   // Move mode's buttons on the canvas: fit this shape, and mirroring.
   $('se-fit-shape').onclick = () => { checkpoint(); shapes[active] = fitted([shapes[active]])[0]; sync(); render(); };
+  // The shape's own outline (not its mirrored copies) into the top-left quarter, centred there: an ear
+  // mirrored left/right or both ways then fills the other quarters.
+  $('se-fit-quarter').onclick = () => {
+    const bb = measure(shapePath(shapes[active])), k = 50 / Math.max(bb.width, bb.height, 0.01);
+    checkpoint();
+    shapes[active] = transform(shapes[active], k, bb.x + bb.width / 2, bb.y + bb.height / 2, 25, 25);
+    sync(); render();
+  };
   $('se-mirror').addEventListener('click', (e) => {
     const b = e.target.closest('[data-mirror]');
     if (!b || b.dataset.mirror === shapes[active].mirror) return;
@@ -691,8 +693,8 @@
   $('se-gen').onclick = () => {
     const n = clamp(+$('se-sides').value || 6, 3, 24), inner = clamp(+$('se-inner').value || 100, 10, 100) / 100;
     const num = (id, max) => clamp(+$(id).value || 0, 0, max); // empty or junk input counts as 0
-    const made = { pts: fit(polygon(n, inner, +$('se-rot').value || 0, num('se-gen-r', 50), num('se-gen-ir', 50), num('se-gen-s', 100) / 100)), mirror: 'none' };
-    replaceShape(placeLike(made, shapes[active])); // takes the selected shape's place and size
+    const pts = fit(polygon(n, inner, +$('se-rot').value || 0, num('se-gen-r', 50), num('se-gen-ir', 50), num('se-gen-s', 100) / 100));
+    replaceShape({ pts, mirror: 'none' }); // a fresh full-size shape: no leftover mirroring either
   };
 
   $('se-show-grid').onchange = (e) => { grid.show = e.target.checked; drawGrid(); };
@@ -750,7 +752,7 @@
   // ---------- presets ----------
 
   // A preset in the grid replaces the whole icon; picked from the "+" card it is added as new shapes,
-  // at half size in the middle and in Move mode, ready to be placed.
+  // full canvas size and in Move mode, ready to be resized and placed.
   const tile = (name) => {
     const b = document.createElement('button');
     b.type = 'button';
@@ -765,7 +767,7 @@
     const a = tile(name);
     a.onclick = () => {
       checkpoint();
-      shapes.push(...presetShapes(name).map((s) => transform(s, 0.5, 50, 50, 50, 50)));
+      shapes.push(...presetShapes(name));
       active = shapes.length - 1; sel = -1; mode = 'move';
       sync(); addDialog.close(); render();
     };

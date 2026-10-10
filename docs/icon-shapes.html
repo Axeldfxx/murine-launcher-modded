@@ -111,7 +111,8 @@ noindex: true    # and out of search engines
 @media (prefers-reduced-motion: reduce) { .se-shake { animation: none; } }
 .se-stage-btn, .se-mirror button { display: inline-flex; align-items: center; justify-content: center; padding: 0;
   border-radius: var(--md-shape-full); color: var(--md-primary); cursor: pointer; }
-.se-stage-btn { position: absolute; top: 10px; right: 10px; width: 40px; height: 40px;
+.se-stage-tools { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; }
+.se-stage-btn { width: 40px; height: 40px;
   border: 1px solid var(--md-outline-variant); background: var(--md-surface-container-low); box-shadow: var(--md-shadow); }
 .se-mirror { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 2px; padding: 3px;
   border-radius: var(--md-shape-full); border: 1px solid var(--md-outline-variant);
@@ -120,7 +121,8 @@ noindex: true    # and out of search engines
 .se-mirror button[aria-pressed="true"] { background: var(--md-primary-container); color: var(--md-on-primary-container); }
 .se-mirror svg { width: 20px; height: 20px; }
 .se-stage-btn:hover, .se-mirror button:hover { background: var(--md-surface-container-high); }
-.se-stage-btn[hidden], .se-mirror[hidden] { display: none; }
+.se-stage-tools[hidden], .se-mirror[hidden] { display: none; }
+.se-stage-btn svg { width: 22px; height: 22px; }
 /* Shape cards under the canvas. */
 .se-cards { display: flex; gap: 10px; overflow-x: auto; padding: 12px 2px 6px; }
 .se-card { position: relative; flex: 0 0 104px; display: flex; flex-direction: column; align-items: center;
@@ -180,7 +182,10 @@ noindex: true    # and out of search engines
           <rect class="se-resize" width="4" height="4" style="cursor: nesw-resize"/>
         </g>
       </svg>
-      <button id="se-fit-shape" class="se-stage-btn" type="button" title="Fit this shape to the box" aria-label="Fit this shape to the box" hidden><span class="material-symbols-outlined" aria-hidden="true">&#xea10;</span></button>
+      <div id="se-fit-tools" class="se-stage-tools" hidden>
+        <button id="se-fit-quarter" class="se-stage-btn" type="button" title="Fit this shape into the top-left quarter" aria-label="Fit this shape into the top-left quarter"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="3 2"/><rect x="5.5" y="5.5" width="6.5" height="6.5" rx="1.5" fill="currentColor"/></svg></button>
+        <button id="se-fit-shape" class="se-stage-btn" type="button" title="Fit this shape to the box" aria-label="Fit this shape to the box"><span class="material-symbols-outlined" aria-hidden="true">&#xea10;</span></button>
+      </div>
       <div id="se-mirror" class="se-mirror" role="group" aria-label="Mirror" hidden>
         <button type="button" data-mirror="none" title="No mirroring" aria-label="No mirroring"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M6 4l6 6-6 6z"/></svg></button>
         <button type="button" data-mirror="h" title="Mirror left and right" aria-label="Mirror left and right"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2v16" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 1.6" fill="none"/><path d="M2 5l5 5-5 5zM18 5l-5 5 5 5z"/></svg></button>
@@ -303,7 +308,7 @@ noindex: true    # and out of search engines
         <span class="material-symbols-outlined">&#xE5CD;</span> <!-- close -->
       </button>
     </div>
-    <p class="contact-modal-desc">Pick a starting point. It's added at half size in the middle, ready to move and resize.</p>
+    <p class="contact-modal-desc">Pick a starting point. It's added at full size, ready to move and resize.</p>
     <div id="se-add-grid" class="se-presets"></div>
   </div>
 </div>
