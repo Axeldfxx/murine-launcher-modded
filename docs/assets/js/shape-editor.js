@@ -20,19 +20,26 @@
 
   // ---------- geometry ----------
 
+  // How far each corner's rounding actually reaches. Two corners sharing an edge split it in proportion
+  // to their sizes, so they never overlap.
+  function cornerSizes(pts) {
+    const n = pts.length, cap = (p, q, len) => (p.r + q.r <= len ? p.r : (len * p.r) / (p.r + q.r));
+    return pts.map((p, i) => {
+      const a = pts[(i + n - 1) % n], b = pts[(i + 1) % n], la = dist(a, p), lb = dist(p, b);
+      return la < 1e-6 || lb < 1e-6 ? 0 : Math.min(p.r, cap(p, a, la), cap(p, b, lb));
+    });
+  }
+
   function buildPath(pts) {
-    const n = pts.length, out = [];
+    const n = pts.length, out = [], sizes = cornerSizes(pts);
     let last = null;
     const xy = (p) => fmt(p.x) + ' ' + fmt(p.y);
     // Skip near-zero lines: they become degenerate cubics in the launcher's polygon.
     const line = (p) => { if (!last || dist(last, p) > 0.05) out.push('L ' + xy(p)); last = p; };
-    // Two corners sharing an edge split it in proportion to their sizes, so they never overlap.
-    const cap = (p, q, len) => (p.r + q.r <= len ? p.r : (len * p.r) / (p.r + q.r));
 
     pts.forEach((p, i) => {
       const a = pts[(i + n - 1) % n], b = pts[(i + 1) % n];
-      const la = dist(a, p), lb = dist(p, b);
-      const d = la < 1e-6 || lb < 1e-6 ? 0 : Math.min(p.r, cap(p, a, la), cap(p, b, lb));
+      const la = dist(a, p), lb = dist(p, b), d = sizes[i];
       if (d < 0.01) return line(p);
 
       const pin = lerp(p, a, d / la), pout = lerp(p, b, d / lb);
@@ -161,6 +168,19 @@
   const snap = (v) => clamp(grid.snap ? Math.round(v / grid.step) * grid.step : +v.toFixed(2), view.lo, view.hi);
   const checkpoint = () => { undo.push(JSON.stringify(snapshot())); if (undo.length > 100) undo.shift(); };
   const load = (p) => { checkpoint(); pts = p; fixed = null; sel = -1; render(); };
+  const withSize = (i, r) => pts.map((p, k) => (k === i ? { ...p, r } : p));
+  const neighbours = (i) => [(i + pts.length - 1) % pts.length, (i + 1) % pts.length];
+  // Largest size corner i can take before it starts shrinking a neighbour's rounding. Neighbours only
+  // ever shrink as it grows, so a binary search finds the point.
+  function squeezeStart(i, max) {
+    const nb = neighbours(i);
+    const sum = (r) => { const d = cornerSizes(withSize(i, r)); return d[nb[0]] + d[nb[1]]; };
+    const base = sum(0);
+    if (sum(max) >= base - 0.01) return max;
+    let lo = 0, hi = max;
+    for (let k = 0; k < 20; k++) { const m = (lo + hi) / 2; if (sum(m) < base - 0.01) hi = m; else lo = m; }
+    return lo;
+  }
   const loadFixed = (name) => { checkpoint(); fixed = name; sel = -1; render(); };
 
   // ---------- rendering ----------
@@ -197,6 +217,12 @@
     const d = fixed ? FIXED[fixed] : buildPath(pts), bad = !fixed && selfIntersects(pts);
     $('se-shape').setAttribute('d', d);
     $('se-outline').setAttribute('points', fixed ? '' : pts.map((p) => p.x + ',' + p.y).join(' '));
+    // Neighbours whose rounding the selected corner is currently eating into.
+    const squeezed = new Set();
+    if (!fixed && sel >= 0) {
+      const now = cornerSizes(pts), alone = cornerSizes(withSize(sel, 0));
+      for (const j of neighbours(sel)) if (now[j] < alone[j] - 0.01) squeezed.add(j);
+    }
 
     const handles = $('se-handles'), adders = $('se-adders');
     const focused = document.activeElement?.dataset?.i !== undefined;
@@ -206,6 +232,7 @@
       const q = pts[(i + 1) % pts.length];
       if (!drag && dist(p, q) > 10) {
         const m = lerp(p, q, 0.5), g = el('g', { 'data-add': i, class: 'se-add' });
+        g.append(el('circle', { cx: m.x, cy: m.y, r: 5, class: 'se-hit' })); // finger-sized target
         g.append(el('circle', { cx: m.x, cy: m.y, r: 2.6 }));
         g.append(el('path', { d: `M${m.x - 1.4} ${m.y}h2.8M${m.x} ${m.y - 1.4}v2.8` }));
         const t = el('title', {});
@@ -215,7 +242,7 @@
       }
       const h = el('g', {
         'data-i': i, tabindex: 0, role: 'button', 'aria-label': `Point ${i + 1}`,
-        class: 'se-handle' + (i === sel ? ' selected' : ''),
+        class: 'se-handle' + (i === sel ? ' selected' : '') + (squeezed.has(i) ? ' squeezed' : ''),
       });
       h.append(el('circle', { cx: p.x, cy: p.y, r: 6, class: 'se-hit' }));
       h.append(el('circle', { cx: p.x, cy: p.y, r: 2.4 }));
@@ -232,6 +259,16 @@
     const maxSize = sel >= 0 ? reach(sel) : Math.max(...pts.map((_, i) => reach(i) / 2));
     $('se-size').max = Math.max(0.1, Math.ceil(maxSize * 10) / 10); // set before value, which the browser clamps to it
     $('se-size').value = cur.r; $('se-size-v').textContent = fmt(Math.min(cur.r, +$('se-size').max));
+    const max = +$('se-size').max, zone = sel >= 0 && !fixed ? squeezeStart(sel, max) : max, hasZone = zone < max - 0.05;
+    $('se-size-track').classList.toggle('has-zone', hasZone);
+    $('se-size-track').style.setProperty('--squeeze', zone / max);
+    // Only the text changes while the slider is dragged (the zone depends on the neighbours, not on this
+    // corner's size): showing or hiding an element under the thumb makes Chrome drop the drag.
+    const warn = $('se-size-warn');
+    warn.hidden = !hasZone;
+    warn.classList.toggle('active', squeezed.size > 0);
+    warn.textContent = squeezed.size ? 'Shrinking the highlighted neighbouring corners'
+      : 'Past the red mark it also shrinks the neighbouring corners';
     $('se-smooth').value = Math.round(cur.s * 100); $('se-smooth-v').textContent = Math.round(cur.s * 100) + '%';
     $('se-apply-all').disabled = sel < 0;
     $('se-x').disabled = $('se-y').disabled = sel < 0;
@@ -255,9 +292,22 @@
 
   const toSvg = (e) => new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse());
 
+  // Touch: only a point or a "+" captures the finger; anywhere else on the canvas the page scrolls and
+  // pinch-zooms as usual. A touch that starts on a point or "+" cancels scrolling in touchstart.
+  let tapOnBackground = false;
+  svg.addEventListener('touchstart', (e) => {
+    if (!fixed && e.target.closest('[data-i], [data-add]')) e.preventDefault();
+  }, { passive: false });
+  // A tap (not a scroll, which ends in pointercancel instead of click) on the background deselects.
+  svg.addEventListener('click', () => {
+    if (tapOnBackground && sel >= 0) { sel = -1; render(); }
+    tapOnBackground = false;
+  });
+
   svg.addEventListener('pointerdown', (e) => {
     if (fixed) return;
     const h = e.target.closest('[data-i]'), add = e.target.closest('[data-add]');
+    tapOnBackground = !h && !add;
     if (add) {
       checkpoint();
       const i = +add.dataset.add, a = pts[i], b = pts[(i + 1) % pts.length], m = lerp(a, b, 0.5);
@@ -266,14 +316,13 @@
     } else if (h) {
       checkpoint();
       sel = +h.dataset.i;
-    } else {
-      sel = -1;
-      return render();
-    }
+    } else return;
     drag = true;
     svg.setPointerCapture(e.pointerId);
     e.preventDefault();
-    render();
+    // Next frame: rendering now would replace the touched element before its touchstart fires, and a
+    // detached element's touchstart never reaches the listener above that stops the page scrolling.
+    requestAnimationFrame(render);
   });
   svg.addEventListener('pointermove', (e) => {
     if (!drag) return;
@@ -425,6 +474,9 @@
     render();
   }
   addEventListener('hashchange', openEditLink);
+  // Fingers can't hit 5-unit cells (about 13px on a phone-sized canvas), so touch screens start at 10.
+  // Pixel density doesn't matter here: sizes are in CSS pixels, which already account for it.
+  if (matchMedia('(pointer: coarse)').matches) $('se-step').value = grid.step = 10;
   drawGrid();
   render();
   openEditLink();

@@ -19,7 +19,7 @@ noindex: true    # and out of search engines
 
 .se-editor { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 24px; align-items: start; }
 @media (max-width: 760px) { .se-editor { grid-template-columns: 1fr; } }
-#se-canvas { width: 100%; aspect-ratio: 1; display: block; touch-action: none; user-select: none;
+#se-canvas { width: 100%; aspect-ratio: 1; display: block; touch-action: manipulation; user-select: none;
              background: var(--md-surface-container-lowest); border: 1px solid var(--md-outline-variant);
              border-radius: var(--md-shape-lg); outline: none; }
 #se-canvas:focus-visible { box-shadow: 0 0 0 2px var(--md-primary); }
@@ -34,7 +34,8 @@ noindex: true    # and out of search engines
 .se-hit { fill: transparent; }
 .se-add { cursor: copy; opacity: .55; }
 .se-add:hover { opacity: 1; }
-.se-add circle { fill: var(--md-surface-container-lowest); stroke: var(--md-outline); stroke-width: .35; }
+.se-handle, .se-add { touch-action: none; }
+.se-add circle:not(.se-hit) { fill: var(--md-surface-container-lowest); stroke: var(--md-outline); stroke-width: .35; }
 .se-add path { stroke: var(--md-on-surface-variant); stroke-width: .45; }
 
 .se-panel fieldset { border: 1px solid var(--md-outline-variant); border-radius: var(--md-shape-md);
@@ -43,6 +44,17 @@ noindex: true    # and out of search engines
 .se-panel label { display: flex; align-items: center; justify-content: space-between; gap: 8px;
                   font-size: .88rem; margin: 4px 0; }
 .se-panel input[type=range] { width: 100%; accent-color: var(--md-primary); }
+/* Tinted end of the size slider: past it, the selected corner shrinks its neighbours' rounding.
+   8px is about half the native thumb, so the tint starts under the thumb's centre. */
+/* Native range inputs ignore their own background, so the tint sits on a wrapper behind the input. */
+.se-size-track { display: flex; }
+.se-size-track.has-zone { background: linear-gradient(to right, transparent calc(8px + (100% - 16px) * var(--squeeze)),
+    color-mix(in srgb, var(--md-tertiary) 55%, transparent) 0) 0 100% / 100% 4px no-repeat; }
+.se-size-track input { margin-bottom: 6px; }
+.se-panel .se-size-warn { color: var(--md-on-surface-variant); font-size: .78rem; line-height: 1.4; min-height: 2.8em; margin: 0 0 4px; }
+.se-panel .se-size-warn.active { color: var(--md-tertiary); }
+.se-handle.squeezed circle:not(.se-hit) { stroke: var(--md-tertiary);
+  fill: color-mix(in srgb, var(--md-tertiary) 35%, var(--md-surface-container-lowest)); }
 .se-panel input[type=number], .se-panel select { width: 5.5em; font: inherit; padding: 2px 6px;
   color: var(--md-on-surface); background: var(--md-surface-container); border: 1px solid var(--md-outline-variant);
   border-radius: var(--md-shape-xs); }
@@ -101,7 +113,8 @@ noindex: true    # and out of search engines
     <fieldset id="se-corner-set">
       <legend id="se-corner-legend">All corners</legend>
       <label for="se-size">Size <span id="se-size-v"></span></label>
-      <input id="se-size" type="range" min="0" max="50" step="0.1">
+      <div id="se-size-track" class="se-size-track"><input id="se-size" type="range" min="0" max="50" step="0.1"></div>
+      <p id="se-size-warn" class="se-size-warn" hidden></p>
       <label for="se-smooth">Smoothing <span id="se-smooth-v"></span></label>
       <input id="se-smooth" type="range" min="0" max="100" step="1">
       <div class="se-scale"><span>Cut</span><span>Round</span><span>Squircle</span></div>
