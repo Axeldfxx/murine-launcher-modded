@@ -226,7 +226,12 @@
     // controls
     const cur = pts[Math.max(sel, 0)];
     $('se-corner-legend').textContent = sel >= 0 ? `Corner ${sel + 1}` : 'All corners';
-    $('se-size').value = cur.r; $('se-size-v').textContent = fmt(cur.r);
+    // The slider ends where the shape stops changing: two corners sharing an edge split it, so with every
+    // corner the same size each one saturates at half its shorter edge; a lone corner can take more.
+    const reach = (i) => Math.min(dist(pts[i], pts[(i + pts.length - 1) % pts.length]), dist(pts[i], pts[(i + 1) % pts.length]));
+    const maxSize = sel >= 0 ? reach(sel) : Math.max(...pts.map((_, i) => reach(i) / 2));
+    $('se-size').max = Math.max(0.1, Math.ceil(maxSize * 10) / 10); // set before value, which the browser clamps to it
+    $('se-size').value = cur.r; $('se-size-v').textContent = fmt(Math.min(cur.r, +$('se-size').max));
     $('se-smooth').value = Math.round(cur.s * 100); $('se-smooth-v').textContent = Math.round(cur.s * 100) + '%';
     $('se-apply-all').disabled = sel < 0;
     $('se-x').disabled = $('se-y').disabled = sel < 0;
