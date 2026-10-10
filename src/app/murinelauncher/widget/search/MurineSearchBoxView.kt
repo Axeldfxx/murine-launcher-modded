@@ -48,6 +48,7 @@ import com.android.launcher3.dragndrop.DragView
 import com.android.launcher3.graphics.DragPreviewProvider
 import com.android.launcher3.model.data.AppInfo
 import com.android.launcher3.model.data.ItemInfoWithIcon.FLAG_NOT_PINNABLE
+import com.android.launcher3.popup.PopupContainerWithArrow
 import com.android.launcher3.touch.ItemLongClickListener
 import com.android.launcher3.views.ActivityContext
 import java.util.stream.Collectors
@@ -149,7 +150,7 @@ class MurineSearchBoxView(context: Context, attrs: AttributeSet?) :
                     apps = apps,
                     onWeb = { performSearch(query) },
                     onApp = { app, view -> launchApp(app, view) },
-                    onAppLongClick = { app -> startAppDrag(app) }
+                    onAppLongClick = { app, row -> startAppDrag(app, row) }
                 )
             }
         }
@@ -158,11 +159,11 @@ class MurineSearchBoxView(context: Context, attrs: AttributeSet?) :
 
     /**
      * Long-pressing a result shows the menu and drags the app to the home screen, like for the app drawer;
-     * @return always false so the touch keeps flowing to the drag controller.
+     * @return false when dragging, so the touch keeps flowing to the drag controller.
      */
-    private fun startAppDrag(app: AppInfo): Boolean {
+    private fun startAppDrag(app: AppInfo, row: View): Boolean {
         if (!ItemLongClickListener.canStartDrag(launcher)) return false
-        if (!launcher.isDraggingEnabled) return false
+        val locked = !launcher.isDraggingEnabled
 
         val dp = launcher.deviceProfile
         val dragLayer = launcher.dragLayer
@@ -184,17 +185,28 @@ class MurineSearchBoxView(context: Context, attrs: AttributeSet?) :
             MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY)
         )
         icon.layout(left, top, left + w, top + h)
-        dragIcon = icon
 
         searchInput.hideKeyboard()
-        // Hidden until dragging starts: clip, as the cancel animation resets alpha and visibility
-        dragView = launcher.workspace.beginDragShared(
-            icon, icon, this, app, DragPreviewProvider(icon), DragOptions()
-        ).also { it.clipBounds = Rect() }
+        if (locked) {
+            // Home screen locked: menu only, the hidden icon is just its anchor and goes away with it
+            val popup = PopupContainerWithArrow.showForIcon(icon)
+            if (popup == null) {
+                dragLayer.removeView(icon)
+                return false
+            }
+            popup.addOnCloseCallback { dragLayer.removeView(icon) }
+            row.parent?.requestDisallowInterceptTouchEvent(true)
+        } else {
+            dragIcon = icon
+            // Hidden until dragging starts: clip, as the cancel animation resets alpha and visibility
+            dragView = launcher.workspace.beginDragShared(
+                icon, icon, this, app, DragPreviewProvider(icon), DragOptions()
+            ).also { it.clipBounds = Rect() }
+        }
         // Zero its bounds, so a tap / scroll near it dismisses the popup instead of hitting the row behind
         icon.layoutParams = icon.layoutParams.also { it.width = 0; it.height = 0 }
         icon.layout(0, 0, 0, 0)
-        return false
+        return locked
     }
 
     override fun onDropCompleted(target: View?, d: DropTarget.DragObject?, success: Boolean) = Unit
@@ -349,7 +361,7 @@ class MurineSearchBoxView(context: Context, attrs: AttributeSet?) :
         private val apps: List<AppInfo>,
         private val onWeb: () -> Unit,
         private val onApp: (AppInfo, View) -> Unit,
-        private val onAppLongClick: (AppInfo) -> Boolean
+        private val onAppLongClick: (AppInfo, View) -> Boolean
     ) : RecyclerView.Adapter<ResultsAdapter.ViewHolder>() {
 
         class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
@@ -386,7 +398,7 @@ class MurineSearchBoxView(context: Context, attrs: AttributeSet?) :
             holder.icon.setImageDrawable(app.bitmap.newIcon(holder.itemView.context))
             holder.textView.text = app.title
             holder.itemView.setOnClickListener { onApp(app, holder.itemView) }
-            holder.itemView.setOnLongClickListener { onAppLongClick(app) }
+            holder.itemView.setOnLongClickListener { onAppLongClick(app, it) }
         }
 
         override fun getItemCount() = webRows + apps.size
