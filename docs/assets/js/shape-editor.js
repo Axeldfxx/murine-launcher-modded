@@ -347,8 +347,7 @@
     const crossed = shapes.findIndex((sh) => sh.pts && selfIntersects(sh.pts));
     const bad = !!out.error || crossed >= 0;
 
-    // The merged icon is filled; every shape and mirrored copy is outlined on top, the selected one solid.
-    $('se-merged').setAttribute('d', out.d);
+    // Each shape and mirrored copy is filled and outlined on its own; the selected one is drawn last, on top.
     const order = shapes.map((_, i) => i).filter((i) => i !== active).concat(active); // selected shape on top
     const strokes = order.flatMap((i) => lines[i].map((d, c) => ({ d, cls: 'se-line' + (i === active ? ' active' : '') + (c ? ' copy' : '') })));
     const layer = $('se-lines');
@@ -567,7 +566,8 @@
       drag = { kind: 'resize', anchor, d0: dist(anchor, c[g.resize]), orig: shapes[active] };
     }
     svg.setPointerCapture(e.pointerId);
-    e.preventDefault();
+    e.preventDefault(); // this also stops the browser focusing the canvas, so do it here:
+    svg.focus({ preventScroll: true }); // Delete, arrows and Esc then act on what was just grabbed
     render();
   });
   svg.addEventListener('pointermove', (e) => {
@@ -595,6 +595,13 @@
     if (h && +h.dataset.i !== sel) { sel = +h.dataset.i; render(); }
   });
 
+  // A shape can't go below 3 points: shake the canvas rather than silently ignore the key.
+  const shake = () => {
+    const stage = svg.parentElement;
+    stage.classList.remove('se-shake');
+    void stage.offsetWidth; // restarts the animation when pressed again mid-shake
+    stage.classList.add('se-shake');
+  };
   document.addEventListener('keydown', (e) => {
     const key = e.key.toLowerCase();
     if ((e.ctrlKey || e.metaKey) && !e.altKey && (key === 'z' || key === 'y')) {
@@ -602,7 +609,13 @@
       e.preventDefault();
       return (key === 'y' || e.shiftKey ? $('se-redo') : $('se-undo')).click(); // Ctrl+Y, or Ctrl/Cmd+Shift+Z
     }
-    if (!svg.contains(document.activeElement)) return;
+    // Delete, Backspace and Esc act on the selected point wherever the focus is (say, on its Size slider),
+    // unless you're typing in a field or a dialog is open. Arrows still need the canvas focused, so elsewhere
+    // they keep moving sliders and scrolling the page.
+    const typing = e.target.matches('input:not([type=range]):not([type=checkbox]), textarea, select');
+    const pointKey = sel >= 0 && mode === 'edit' && ['Delete', 'Backspace', 'Escape'].includes(e.key)
+      && !typing && !e.target.closest('.contact-modal-overlay');
+    if (!pointKey && !svg.contains(document.activeElement)) return;
     const step = grid.snap ? grid.step : e.shiftKey ? 5 : 0.5;
     const mv = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
     if (mode === 'move') { // arrows move the whole shape
@@ -616,7 +629,7 @@
       pts[sel].x = snap(pts[sel].x + mv[0] * step);
       pts[sel].y = snap(pts[sel].y + mv[1] * step);
     } else if (e.key === 'Delete' || e.key === 'Backspace') {
-      if (pts.length <= 3) return;
+      if (pts.length <= 3) return shake();
       checkpoint();
       pts.splice(sel, 1);
       sel = Math.min(sel, pts.length - 1);

@@ -26,8 +26,13 @@ noindex: true    # and out of search engines
 .se-grid-line { stroke: var(--md-outline-variant); stroke-width: .15; }
 .se-grid-mid { stroke: var(--md-outline); stroke-width: .25; }
 .se-bounds { fill: none; stroke: var(--md-outline); stroke-width: .35; stroke-dasharray: 1.5 1; }
-.se-merged { fill: var(--md-primary-container); fill-opacity: .85; }
-.se-line { fill: none; stroke: var(--md-outline); stroke-width: .35; stroke-dasharray: 1.2 1; }
+/* Every shape is filled on its own: the others softly and behind, the selected one stronger and on top. */
+.se-stage { --se-fill-active: color-mix(in srgb, var(--md-primary) 50%, transparent);
+            --se-fill-other: color-mix(in srgb, var(--md-primary-container) 85%, transparent); }
+[data-theme="dark"] .se-stage { --se-fill-active: color-mix(in srgb, var(--md-primary-container) 85%, transparent);
+                                --se-fill-other: color-mix(in srgb, var(--md-primary-container) 30%, transparent); }
+.se-line { fill: var(--se-fill-other); stroke: var(--md-outline); stroke-width: .35; stroke-dasharray: 1.2 1; }
+.se-line.active { fill: var(--se-fill-active); }
 .se-line.copy { stroke-dasharray: .4 .8; }
 .se-line.active { stroke: var(--md-primary); stroke-width: .5; stroke-dasharray: none; }
 .se-line.active.copy { stroke-width: .35; stroke-dasharray: 1.2 1; }
@@ -101,6 +106,9 @@ noindex: true    # and out of search engines
 /* Canvas overlay (Move mode): fit this shape top right, mirroring bottom left. */
 .se-left { min-width: 0; }
 .se-stage { position: relative; }
+.se-shake { animation: se-shake .35s; }
+@keyframes se-shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+@media (prefers-reduced-motion: reduce) { .se-shake { animation: none; } }
 .se-stage-btn, .se-mirror button { display: inline-flex; align-items: center; justify-content: center; padding: 0;
   border-radius: var(--md-shape-full); color: var(--md-primary); cursor: pointer; }
 .se-stage-btn { position: absolute; top: 10px; right: 10px; width: 40px; height: 40px;
@@ -159,7 +167,6 @@ noindex: true    # and out of search engines
       <svg id="se-canvas" viewBox="-20 -20 140 140" tabindex="0" aria-label="Shape editor. In Edit mode drag points to move them and the plus marks to add points; in Move mode drag the shape or its corners.">
         <g id="se-grid"></g>
         <rect class="se-bounds" x="0" y="0" width="100" height="100"/>
-        <path id="se-merged" class="se-merged"/>
         <g id="se-lines"></g>
         <polygon id="se-outline" class="se-outline"/>
         <g id="se-adders"></g>
