@@ -337,8 +337,8 @@
   $('se-reset').onclick = () => load(fit(PRESETS.Squircle()));
   $('se-gen').onclick = () => {
     const n = clamp(+$('se-sides').value || 6, 3, 24), inner = clamp(+$('se-inner').value || 100, 10, 100) / 100;
-    const cur = pts[Math.max(sel, 0)];
-    load(fit(polygon(n, inner, +$('se-rot').value || 0, cur.r, Math.min(cur.r, 6), cur.s)));
+    const num = (id, max) => clamp(+$(id).value || 0, 0, max); // empty or junk input counts as 0
+    load(fit(polygon(n, inner, +$('se-rot').value || 0, num('se-gen-r', 50), num('se-gen-ir', 50), num('se-gen-s', 100) / 100)));
   };
 
   $('se-show-grid').onchange = (e) => { grid.show = e.target.checked; drawGrid(); };
