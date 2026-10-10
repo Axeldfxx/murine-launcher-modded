@@ -26,7 +26,14 @@ noindex: true    # and out of search engines
 .se-grid-line { stroke: var(--md-outline-variant); stroke-width: .15; }
 .se-grid-mid { stroke: var(--md-outline); stroke-width: .25; }
 .se-bounds { fill: none; stroke: var(--md-outline); stroke-width: .35; stroke-dasharray: 1.5 1; }
-.se-shape { fill: var(--md-primary-container); fill-opacity: .85; stroke: var(--md-primary); stroke-width: .5; }
+.se-merged { fill: var(--md-primary-container); fill-opacity: .85; }
+.se-line { fill: none; stroke: var(--md-outline); stroke-width: .35; stroke-dasharray: 1.2 1; }
+.se-line.copy { stroke-dasharray: .4 .8; }
+.se-line.active { stroke: var(--md-primary); stroke-width: .5; stroke-dasharray: none; }
+.se-line.active.copy { stroke-width: .35; stroke-dasharray: 1.2 1; }
+.se-move-box { fill: transparent; stroke: var(--md-primary); stroke-width: .3; stroke-dasharray: 1 1; cursor: move; }
+.se-resize { fill: var(--md-surface-container-lowest); stroke: var(--md-primary); stroke-width: .5; }
+.se-move-box, .se-resize { touch-action: none; }
 .se-outline { fill: none; stroke: var(--md-on-surface-variant); stroke-width: .25; stroke-dasharray: 1 1; }
 .se-handle { cursor: grab; outline: none; }
 .se-handle circle:not(.se-hit) { fill: var(--md-surface-container-lowest); stroke: var(--md-primary); stroke-width: .7; }
@@ -91,6 +98,54 @@ noindex: true    # and out of search engines
 .se-share-card { width: 100%; border: 0; font: inherit; text-align: left; cursor: pointer; }
 .se-share-card[hidden] { display: none; }
 .se-share-card:disabled { opacity: .45; cursor: default; box-shadow: none; }
+/* Canvas overlay (Move mode): fit this shape top right, mirroring bottom left. */
+.se-left { min-width: 0; }
+.se-stage { position: relative; }
+.se-stage-btn, .se-mirror button { display: inline-flex; align-items: center; justify-content: center; padding: 0;
+  border-radius: var(--md-shape-full); color: var(--md-primary); cursor: pointer; }
+.se-stage-btn { position: absolute; top: 10px; right: 10px; width: 40px; height: 40px;
+  border: 1px solid var(--md-outline-variant); background: var(--md-surface-container-low); box-shadow: var(--md-shadow); }
+.se-mirror { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 2px; padding: 3px;
+  border-radius: var(--md-shape-full); border: 1px solid var(--md-outline-variant);
+  background: var(--md-surface-container-low); box-shadow: var(--md-shadow); }
+.se-mirror button { width: 34px; height: 34px; border: 0; background: transparent; }
+.se-mirror button[aria-pressed="true"] { background: var(--md-primary-container); color: var(--md-on-primary-container); }
+.se-mirror svg { width: 20px; height: 20px; }
+.se-stage-btn:hover, .se-mirror button:hover { background: var(--md-surface-container-high); }
+.se-stage-btn[hidden], .se-mirror[hidden] { display: none; }
+/* Shape cards under the canvas. */
+.se-cards { display: flex; gap: 10px; overflow-x: auto; padding: 12px 2px 6px; }
+.se-card { position: relative; flex: 0 0 104px; display: flex; flex-direction: column; align-items: center;
+  border: 1px solid var(--md-outline-variant); border-radius: var(--md-shape-md); background: var(--md-surface-container-low); }
+.se-card.active { border-color: var(--md-primary); box-shadow: 0 0 0 1px var(--md-primary); }
+.se-card-pick { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; padding: 12px 6px 8px;
+  border: 0; background: transparent; color: var(--md-on-surface); font: inherit; font-size: .75rem; cursor: pointer;
+  border-radius: var(--md-shape-md); }
+.se-card-pick svg { width: 56px; height: 56px; }
+.se-card-pick path { fill: var(--md-primary); }
+.se-card-pick path.copy { fill-opacity: .35; }
+.se-card-box { fill: none; stroke: var(--md-outline-variant); stroke-width: 2; stroke-dasharray: 6 4; }
+.se-card-del { position: absolute; top: 2px; right: 2px; width: 28px; height: 28px; display: flex; align-items: center;
+  justify-content: center; padding: 0; border: 0; border-radius: 50%; background: transparent;
+  color: var(--md-on-surface-variant); cursor: pointer; }
+.se-card-del:hover { background: var(--md-surface-container-highest); color: var(--md-error); }
+.se-card-del .material-symbols-outlined, .se-card-modes .material-symbols-outlined { font-size: 18px; }
+.se-card-modes { display: flex; gap: 4px; padding: 0 6px 8px; }
+.se-card-modes button { width: 38px; height: 30px; display: flex; align-items: center; justify-content: center; padding: 0;
+  border: 1px solid var(--md-outline-variant); border-radius: var(--md-shape-full); background: transparent;
+  color: var(--md-on-surface-variant); cursor: pointer; }
+.se-card-modes button[aria-pressed="true"] { background: var(--md-primary-container); color: var(--md-on-primary-container); border-color: transparent; }
+.se-card-modes button:disabled { opacity: .35; cursor: default; }
+.se-card-add { justify-content: center; min-height: 104px; border-style: dashed; color: var(--md-primary); cursor: pointer; font: inherit; }
+.se-card-add .material-symbols-outlined { font-size: 32px; }
+.se-card-add:hover { background: var(--md-surface-container-high); }
+.se-note-out { color: var(--md-on-surface-variant); font-size: .85rem; margin: 6px 0 0; }
+/* The "add a shape" dialog reuses the contact dialog's classes too. */
+#se-add { line-height: 1.5; }
+#se-add h2 { margin: 0; }
+#se-add .contact-modal { max-width: 640px; }
+#se-add .contact-modal-desc { margin: 0 0 16px; }
+#se-add .se-presets { margin: 0; max-height: 60vh; overflow-y: auto; }
 #se-measure { position: absolute; width: 0; height: 0; overflow: hidden; }
 </style>
 
@@ -99,24 +154,45 @@ noindex: true    # and out of search engines
 
 <h2>Editor</h2>
 <div class="se-editor">
-  <svg id="se-canvas" viewBox="-20 -20 140 140" tabindex="0" aria-label="Shape editor. Drag points to move them, use the plus marks to add points.">
-    <g id="se-grid"></g>
-    <rect class="se-bounds" x="0" y="0" width="100" height="100"/>
-    <path id="se-shape" class="se-shape"/>
-    <polygon id="se-outline" class="se-outline"/>
-    <g id="se-adders"></g>
-    <g id="se-handles"></g>
-  </svg>
+  <div class="se-left">
+    <div class="se-stage">
+      <svg id="se-canvas" viewBox="-20 -20 140 140" tabindex="0" aria-label="Shape editor. In Edit mode drag points to move them and the plus marks to add points; in Move mode drag the shape or its corners.">
+        <g id="se-grid"></g>
+        <rect class="se-bounds" x="0" y="0" width="100" height="100"/>
+        <path id="se-merged" class="se-merged"/>
+        <g id="se-lines"></g>
+        <polygon id="se-outline" class="se-outline"/>
+        <g id="se-adders"></g>
+        <g id="se-handles"></g>
+        <g id="se-move" style="display: none">
+          <rect id="se-move-box" class="se-move-box"/>
+          <!-- corners in the order the script fills them: top left, top right, bottom right, bottom left -->
+          <rect class="se-resize" width="4" height="4" style="cursor: nwse-resize"/>
+          <rect class="se-resize" width="4" height="4" style="cursor: nesw-resize"/>
+          <rect class="se-resize" width="4" height="4" style="cursor: nwse-resize"/>
+          <rect class="se-resize" width="4" height="4" style="cursor: nesw-resize"/>
+        </g>
+      </svg>
+      <button id="se-fit-shape" class="se-stage-btn" type="button" title="Fit this shape to the box" aria-label="Fit this shape to the box" hidden><span class="material-symbols-outlined" aria-hidden="true">&#xea10;</span></button>
+      <div id="se-mirror" class="se-mirror" role="group" aria-label="Mirror" hidden>
+        <button type="button" data-mirror="none" title="No mirroring" aria-label="No mirroring"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M6 4l6 6-6 6z"/></svg></button>
+        <button type="button" data-mirror="h" title="Mirror left and right" aria-label="Mirror left and right"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2v16" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 1.6" fill="none"/><path d="M2 5l5 5-5 5zM18 5l-5 5 5 5z"/></svg></button>
+        <button type="button" data-mirror="v" title="Mirror top and bottom" aria-label="Mirror top and bottom"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 10h16" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 1.6" fill="none"/><path d="M5 2l5 5 5-5zM5 18l5-5 5 5z"/></svg></button>
+        <button type="button" data-mirror="both" title="Mirror both ways" aria-label="Mirror both ways"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2v16M2 10h16" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 1.6" fill="none"/><path d="M2 2h5l-5 5zM18 2h-5l5 5zM2 18h5l-5-5zM18 18h-5l5-5z"/></svg></button>
+      </div>
+    </div>
+    <div id="se-cards" class="se-cards" role="list" aria-label="Shapes"></div>
+  </div>
 
   <div class="se-panel">
     <div class="se-row se-toolbar">
       <button id="se-undo" class="se-btn" type="button" title="Undo (Ctrl+Z)">Undo</button>
       <button id="se-redo" class="se-btn" type="button" title="Redo (Ctrl+Y or Ctrl+Shift+Z)">Redo</button>
-      <button id="se-fit" class="se-btn" type="button" title="Scale and centre the shape until its longest side touches the box">Fit to box</button>
+      <button id="se-fit" class="se-btn" type="button" title="Scale and centre the whole icon until its longest side touches the box">Fit to box</button>
       <button id="se-reset" class="se-btn" type="button">Reset</button>
     </div>
-    <p id="se-fixed-note" class="se-hint se-note" hidden>This is a ready-made shape, so it can't be edited.
-      Pick another preset, or use Generate or Reset to go back to editing.</p>
+    <p id="se-fixed-note" class="se-hint se-note" hidden>This is a ready-made shape: you can move, resize and
+      mirror it, but not edit its points. Generate replaces it with an editable one.</p>
     <fieldset id="se-corner-set">
       <legend id="se-corner-legend">All corners</legend>
       <label for="se-size">Size <span id="se-size-v"></span></label>
@@ -173,7 +249,8 @@ noindex: true    # and out of search engines
   </div>
   <div>
     <textarea id="se-out" readonly aria-label="Path data" spellcheck="false"></textarea>
-    <p id="se-warn" class="se-warn" hidden>Edges cross each other. The launcher needs a shape that doesn't overlap itself.</p>
+    <p id="se-warn" class="se-warn" hidden></p>
+    <p id="se-note" class="se-note-out" hidden></p>
     <div class="se-actions">
       <a id="se-use" class="btn-filled" href="#">Use in Murine</a>
       <button id="se-share-open" class="btn-outlined" type="button" aria-haspopup="dialog">Share</button>
@@ -211,6 +288,20 @@ noindex: true    # and out of search engines
   </div>
 </div>
 
+<div class="contact-modal-overlay" id="se-add" aria-hidden="true">
+  <div class="contact-modal" role="dialog" aria-modal="true" aria-labelledby="se-add-title">
+    <div class="contact-modal-header">
+      <h2 id="se-add-title">Add a shape</h2>
+      <button class="contact-modal-close" type="button" aria-label="Close" data-close>
+        <span class="material-symbols-outlined">&#xE5CD;</span> <!-- close -->
+      </button>
+    </div>
+    <p class="contact-modal-desc">Pick a starting point. It's added at half size in the middle, ready to move and resize.</p>
+    <div id="se-add-grid" class="se-presets"></div>
+  </div>
+</div>
+
 <svg id="se-measure" viewBox="0 0 100 100" aria-hidden="true"><path id="se-measure-path"/></svg>
 
+<script src="{{ '/assets/js/polygon-clipping.min.js' | relative_url }}?v={{ site.version }}"></script>
 <script src="{{ '/assets/js/shape-editor.js' | relative_url }}?v={{ site.version }}"></script>
