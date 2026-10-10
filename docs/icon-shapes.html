@@ -87,7 +87,8 @@ noindex: true    # and out of search engines
   border-radius: var(--md-shape-full); border: 1px solid var(--md-outline-variant);
   background: var(--md-surface-container-low); box-shadow: var(--md-shadow); font-size: .82rem; }
 .se-pill:has(#se-remove[hidden]) { padding-right: 8px; }
-.se-pill[hidden], .se-pill button[hidden] { display: none; }
+#se-rot-pill { padding: 3px 10px 3px 3px; }
+.se-pill[hidden], .se-pill [hidden] { display: none; }
 .se-pill label { display: flex; align-items: center; gap: 4px; color: var(--md-on-surface-variant); }
 .se-pill input { width: 4.2em; height: 28px; padding: 0 6px; font: inherit; color: var(--md-on-surface);
   background: var(--md-surface-container); border: 1px solid var(--md-outline-variant); border-radius: var(--md-shape-xs); }
@@ -95,7 +96,10 @@ noindex: true    # and out of search engines
   border: 0; border-radius: var(--md-shape-full); background: transparent; color: var(--md-primary); cursor: pointer; }
 .se-pill button:hover:not(:disabled) { background: var(--md-surface-container-high); }
 .se-pill button:disabled { opacity: .35; cursor: default; }
+.se-pill button[aria-pressed="true"] { background: var(--md-primary-container); color: var(--md-on-primary-container); }
 .se-pill .material-symbols-outlined { font-size: 20px; }
+.se-pill input[type=range] { width: 120px; height: auto; padding: 0; border: 0; background: none; accent-color: var(--md-primary); }
+#se-turn-val { min-width: 4ch; text-align: right; color: var(--md-on-surface-variant); font-variant-numeric: tabular-nums; }
 @media (pointer: fine) { .se-pill input { width: calc(6ch + 22px); } } /* room for "-12.50" plus the spin arrows */
 .se-canvas-hint { margin-top: 2px; }
 .se-hint { font-size: .8rem; color: var(--md-on-surface-variant); line-height: 1.5; margin: 8px 0 0; }
@@ -212,6 +216,11 @@ noindex: true    # and out of search engines
         <button type="button" data-mirror="h" title="Mirror left and right" aria-label="Mirror left and right"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2v16" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 1.6" fill="none"/><path d="M2 5l5 5-5 5zM18 5l-5 5 5 5z"/></svg></button>
         <button type="button" data-mirror="v" title="Mirror top and bottom" aria-label="Mirror top and bottom"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 10h16" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 1.6" fill="none"/><path d="M5 2l5 5 5-5zM5 18l5-5 5 5z"/></svg></button>
         <button type="button" data-mirror="both" title="Mirror both ways" aria-label="Mirror both ways"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2v16M2 10h16" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 1.6" fill="none"/><path d="M2 2h5l-5 5zM18 2h-5l5 5zM2 18h5l-5-5zM18 18h-5l5-5z"/></svg></button>
+      </div>
+      <div id="se-rot-pill" class="se-pill" role="group" aria-label="Rotation" hidden>
+        <button id="se-turn-mode" type="button" aria-pressed="false" title="Type the angle" aria-label="Type the angle"><span class="material-symbols-outlined" aria-hidden="true">&#xe41a;</span></button>
+        <input id="se-turn" type="range" min="0" max="359" step="1" aria-label="Rotation in degrees, clockwise"><output id="se-turn-val" for="se-turn"></output>
+        <label id="se-turn-type" hidden><input id="se-turn-num" type="number" step="1" aria-label="Rotation in degrees, clockwise">°</label>
       </div>
       <div id="se-point-pill" class="se-pill" role="group" aria-label="Point" hidden>
         <label>X <input id="se-x" type="number" step="0.5" inputmode="decimal"></label>

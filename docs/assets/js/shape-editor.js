@@ -129,7 +129,18 @@
   const MIRRORS = { none: [], h: [[-1, 1]], v: [[1, -1]], both: [[-1, 1], [1, -1], [-1, -1]] };
   // Rewrites every coordinate pair of one of our own paths (absolute M/L/C/Z, single spaces).
   const mapPath = (d, f) => d.replace(/(-?[\d.]+) (-?[\d.]+)/g, (_, x, y) => { const p = f(+x, +y); return fmt(p.x) + ' ' + fmt(p.y); });
-  const shapePath = (sh) => (sh.fixed ? mapPath(FIXED[sh.fixed], (x, y) => ({ x: x * sh.a + sh.x, y: y * sh.a + sh.y })) : buildPath(sh.pts));
+  // Centroid of each FIXED path in its own 0-100 frame: what it rotates around.
+  const FIXED_C = Object.fromEntries(Object.entries(FIXED).map(([k, d]) => [k, ringCentroid(flatten(d))]));
+  function shapePath(sh) {
+    if (!sh.fixed) return buildPath(sh.pts);
+    if (!sh.rot) return mapPath(FIXED[sh.fixed], (x, y) => ({ x: x * sh.a + sh.x, y: y * sh.a + sh.y })); // exact, unturned
+    const c = FIXED_C[sh.fixed], t = (sh.rot || 0) * Math.PI / 180, cos = Math.cos(t), sin = Math.sin(t);
+    const ox = c.x * sh.a + sh.x, oy = c.y * sh.a + sh.y;
+    return mapPath(FIXED[sh.fixed], (x, y) => {
+      const dx = (x - c.x) * sh.a, dy = (y - c.y) * sh.a;
+      return { x: ox + dx * cos - dy * sin, y: oy + dx * sin + dy * cos };
+    });
+  }
   // A shape's own outline followed by its mirrored copies.
   const copies = (sh) => {
     const d = shapePath(sh);
@@ -181,14 +192,22 @@
     return ring;
   }
   // Area centroid of the shape's own outline, mirrored copies excluded.
-  function centroid(sh) {
-    const r = flatten(shapePath(sh));
+  const centroid = (sh) => ringCentroid(flatten(shapePath(sh)));
+  function ringCentroid(r) {
     let a = 0, x = 0, y = 0;
     r.forEach(([x0, y0], i) => {
       const [x1, y1] = r[(i + 1) % r.length], c = x0 * y1 - x1 * y0;
       a += c; x += (x0 + x1) * c; y += (y0 + y1) * c;
     });
     return { x: x / (3 * a), y: y / (3 * a) };
+  }
+  // Turns a shape by deg (clockwise) around its centroid. rot keeps the running total for the pill;
+  // FIXED shapes are drawn from it, point shapes get their points turned.
+  function rotated(sh, deg) {
+    const rot = r2((((sh.rot || 0) + deg) % 360 + 360) % 360) % 360;
+    if (sh.fixed) return { ...sh, rot };
+    const c = centroid(sh), t = deg * Math.PI / 180, cos = Math.cos(t), sin = Math.sin(t);
+    return { ...sh, rot, pts: sh.pts.map((p) => ({ ...p, x: r2(c.x + (p.x - c.x) * cos - (p.y - c.y) * sin), y: r2(c.y + (p.x - c.x) * sin + (p.y - c.y) * cos) })) };
   }
   // Ramer–Douglas–Peucker: drops points closer than tol to the line between their neighbours.
   function simplify(pts, tol) {
@@ -224,6 +243,7 @@
 
   const STORE = 'murine-shape-editor';
   let shapes, active = 0, mode = 'edit', sel = -1, drag = null, sliding = false;
+  let turnTyping = false; // the rotation pill shows a number field instead of the slider
   let pickedCorner = -1; // Move mode: the selected resize corner (0 top left, clockwise), -1 for none
   let pts = null, fixed = null; // shortcuts into shapes[active]: its points, or its FIXED name
   let synced = '';
@@ -242,14 +262,15 @@
   const snapshot = () => ({ shapes, active });
   // Also reads edit links, i.e. anything anyone can type into a URL: rebuild every field, keep nothing unchecked.
   function cleanShape(s) {
-    const mirror = Object.hasOwn(MIRRORS, s?.mirror) ? s.mirror : 'none';
+    const mirror = Object.hasOwn(MIRRORS, s?.mirror) ? s.mirror : 'none', rot = r2((((+(s?.rot ?? 0)) % 360) + 360) % 360) % 360;
+    if (!Number.isFinite(rot)) return null;
     if (typeof s?.fixed === 'string' && Object.hasOwn(FIXED, s.fixed)) {
-      const sh = { fixed: s.fixed, a: clamp(+(s.a ?? 1), 0.01, 20), x: clamp(+(s.x ?? 0), -1000, 1000), y: clamp(+(s.y ?? 0), -1000, 1000), mirror };
+      const sh = { fixed: s.fixed, a: clamp(+(s.a ?? 1), 0.01, 20), x: clamp(+(s.x ?? 0), -1000, 1000), y: clamp(+(s.y ?? 0), -1000, 1000), mirror, rot };
       return [sh.a, sh.x, sh.y].every(Number.isFinite) ? sh : null;
     }
     if (!Array.isArray(s?.pts) || s.pts.length < 3 || s.pts.length > 200) return null;
     const p = s.pts.map((q) => ({ x: clamp(+q?.x, -500, 600), y: clamp(+q?.y, -500, 600), r: clamp(+q?.r, 0, 500), s: clamp(+q?.s, 0, 1) }));
-    return p.every((q) => [q.x, q.y, q.r, q.s].every(Number.isFinite)) ? { pts: p, mirror } : null;
+    return p.every((q) => [q.x, q.y, q.r, q.s].every(Number.isFinite)) ? { pts: p, mirror, rot } : null;
   }
   function restore(o) {
     // Saves and links from before multiple shapes held one shape: { pts } or { pts, fixed }.
@@ -421,6 +442,14 @@
     // Top-left pill: the selected point (Edit mode) or the selected corner (Move mode).
     const at = moving ? (pickedCorner >= 0 && activeBox ? boxCorners(activeBox)[pickedCorner] : null) : (pts && sel >= 0 ? pts[sel] : null);
     $('se-point-pill').hidden = !at;
+    // In its place, with no corner selected in Move mode: the shape's rotation.
+    $('se-rot-pill').hidden = !moving || !!at;
+    if (moving && !at) {
+      const rot = shapes[active].rot || 0;
+      $('se-turn').value = rot; $('se-turn-val').value = Math.round(rot) + '°'; $('se-turn-num').value = fmt(rot);
+      $('se-turn').hidden = $('se-turn-val').hidden = turnTyping; $('se-turn-type').hidden = !turnTyping;
+      $('se-turn-mode').setAttribute('aria-pressed', turnTyping);
+    }
     if (at) {
       $('se-x').value = fmt(at.x); $('se-y').value = fmt(at.y);
       $('se-point-pill').setAttribute('aria-label', moving ? 'Corner' : `Point ${sel + 1}`);
@@ -627,7 +656,7 @@
   document.addEventListener('keydown', (e) => {
     const key = e.key.toLowerCase();
     if ((e.ctrlKey || e.metaKey) && !e.altKey && (key === 'z' || key === 'y')) {
-      if (e.target.matches('input, textarea, select')) return; // a text field keeps its own undo
+      if (e.target.matches('input:not([type=range]):not([type=checkbox]), textarea, select')) return; // a text field keeps its own undo
       e.preventDefault();
       return (key === 'y' || e.shiftKey ? $('se-redo') : $('se-undo')).click(); // Ctrl+Y, or Ctrl/Cmd+Shift+Z
     }
@@ -727,6 +756,30 @@
       render();
     })
   );
+  // Rotation slider: one undo step per drag, and every value is turned from the shape as it was when the
+  // drag started, so the points don't pick up rounding from hundreds of small turns.
+  let turnFrom = null;
+  $('se-turn').addEventListener('input', (e) => {
+    if (!turnFrom) { checkpoint(); turnFrom = shapes[active]; }
+    shapes[active] = rotated(turnFrom, +e.target.value - (turnFrom.rot || 0));
+    sync(); render();
+  });
+  ['change', 'blur'].forEach((t) => $('se-turn').addEventListener(t, () => (turnFrom = null)));
+  // The icon switches between the slider and typing the angle; any typed angle is wrapped into 0-359.
+  $('se-turn-mode').onclick = () => {
+    turnTyping = !turnTyping;
+    render();
+    if (turnTyping) $('se-turn-num').select();
+  };
+  $('se-turn-num').addEventListener('change', (e) => {
+    const v = +e.target.value, sh = shapes[active];
+    if (e.target.value === '' || !Number.isFinite(v)) return render(); // puts the current value back
+    const deg = ((v - (sh.rot || 0)) % 360 + 360) % 360;
+    if (deg < 0.005 || deg > 359.995) return render();
+    checkpoint();
+    shapes[active] = rotated(sh, deg);
+    sync(); render();
+  });
   // Greyed out at 3 points; should it get clicked anyway (re-enabled from the dev tools, say), it shakes like Delete.
   $('se-remove').onclick = () => {
     if (!pts || sel < 0) return;
