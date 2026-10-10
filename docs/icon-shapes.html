@@ -65,6 +65,7 @@ noindex: true    # and out of search engines
           border: 1px solid var(--md-outline); background: transparent; color: var(--md-primary); }
 .se-btn:hover:not(:disabled) { background: var(--md-surface-container); }
 .se-btn:disabled { opacity: .4; cursor: default; }
+.se-toolbar { margin: 0 0 12px; }
 .se-hint { font-size: .8rem; color: var(--md-on-surface-variant); line-height: 1.5; margin: 8px 0 0; }
 
 .se-result { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: center; margin-top: 1rem; }
@@ -108,6 +109,12 @@ noindex: true    # and out of search engines
   </svg>
 
   <div class="se-panel">
+    <div class="se-row se-toolbar">
+      <button id="se-undo" class="se-btn" type="button" title="Undo (Ctrl+Z)">Undo</button>
+      <button id="se-redo" class="se-btn" type="button" title="Redo (Ctrl+Y or Ctrl+Shift+Z)">Redo</button>
+      <button id="se-fit" class="se-btn" type="button" title="Scale and centre the shape until its longest side touches the box">Fit to box</button>
+      <button id="se-reset" class="se-btn" type="button">Reset</button>
+    </div>
     <p id="se-fixed-note" class="se-hint se-note" hidden>This is a ready-made shape, so it can't be edited.
       Pick another preset, or use Generate or Reset to go back to editing.</p>
     <fieldset id="se-corner-set">
@@ -152,11 +159,6 @@ noindex: true    # and out of search engines
       <div class="se-row"><button id="se-gen" class="se-btn" type="button">Generate</button></div>
     </fieldset>
 
-    <div class="se-row">
-      <button id="se-fit" class="se-btn" type="button">Fit to box</button>
-      <button id="se-undo" class="se-btn" type="button">Undo</button>
-      <button id="se-reset" class="se-btn" type="button">Reset</button>
-    </div>
   </div>
 </div>
 

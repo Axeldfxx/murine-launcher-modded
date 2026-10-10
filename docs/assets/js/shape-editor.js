@@ -128,7 +128,7 @@
 
   const STORE = 'murine-shape-editor';
   let pts, fixed = null, sel = -1, drag = false, sliding = false; // fixed: name of a FIXED shape in use instead of pts
-  const undo = [];
+  const undo = [], redo = [];
 
   // Everything needed to resume editing. Undo, localStorage and edit links all go through this pair,
   // so a new piece of state only has to be added to snapshot() and restore().
@@ -166,7 +166,11 @@
   }
   const grid = { show: true, snap: true, step: 5 };
   const snap = (v) => clamp(grid.snap ? Math.round(v / grid.step) * grid.step : +v.toFixed(2), view.lo, view.hi);
-  const checkpoint = () => { undo.push(JSON.stringify(snapshot())); if (undo.length > 100) undo.shift(); };
+  const checkpoint = () => {
+    undo.push(JSON.stringify(snapshot()));
+    if (undo.length > 100) undo.shift();
+    redo.length = 0; // a new edit starts a new branch, so there's nothing left to redo
+  };
   const load = (p) => { checkpoint(); pts = p; fixed = null; sel = -1; render(); };
   const withSize = (i, r) => pts.map((p, k) => (k === i ? { ...p, r } : p));
   const neighbours = (i) => [(i + pts.length - 1) % pts.length, (i + 1) % pts.length];
@@ -275,6 +279,7 @@
     $('se-x').value = sel >= 0 ? fmt(cur.x) : ''; $('se-y').value = sel >= 0 ? fmt(cur.y) : '';
     $('se-remove').disabled = sel < 0 || pts.length <= 3;
     $('se-undo').disabled = undo.length === 0;
+    $('se-redo').disabled = redo.length === 0;
     $('se-corner-set').disabled = $('se-point-set').disabled = $('se-fit').disabled = !!fixed;
     $('se-fixed-note').hidden = !fixed;
 
@@ -340,7 +345,12 @@
   });
 
   document.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); return $('se-undo').click(); }
+    const key = e.key.toLowerCase();
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (key === 'z' || key === 'y')) {
+      if (e.target.matches('input, textarea, select')) return; // a text field keeps its own undo
+      e.preventDefault();
+      return (key === 'y' || e.shiftKey ? $('se-redo') : $('se-undo')).click(); // Ctrl+Y, or Ctrl/Cmd+Shift+Z
+    }
     if (sel < 0 || !svg.contains(document.activeElement)) return;
     const step = grid.snap ? grid.step : e.shiftKey ? 5 : 0.5;
     const mv = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
@@ -387,8 +397,17 @@
   );
   $('se-remove').onclick = () => { checkpoint(); pts.splice(sel, 1); sel = -1; render(); };
   $('se-fit').onclick = () => load(fit(pts));
-  $('se-undo').onclick = () => { if (undo.length && restore(JSON.parse(undo.pop()))) render(); };
-  $('se-reset').onclick = () => load(fit(PRESETS.Squircle()));
+  // Undo and redo each move the current state onto the other stack.
+  const travel = (from, to) => {
+    if (!from.length) return;
+    const now = JSON.stringify(snapshot());
+    if (restore(JSON.parse(from.pop()))) { to.push(now); render(); }
+  };
+  $('se-undo').onclick = () => travel(undo, redo);
+  $('se-redo').onclick = () => travel(redo, undo);
+  $('se-reset').onclick = () => {
+    if (confirm('Start over from the default squircle? Undo can still bring this shape back.')) load(fit(PRESETS.Squircle()));
+  };
   $('se-gen').onclick = () => {
     const n = clamp(+$('se-sides').value || 6, 3, 24), inner = clamp(+$('se-inner').value || 100, 10, 100) / 100;
     const num = (id, max) => clamp(+$(id).value || 0, 0, max); // empty or junk input counts as 0
@@ -470,7 +489,7 @@
     // Real states are well under 1 KB packed; the cap keeps a crafted link from inflating into megabytes.
     if (data.length < 8000) try { link = JSON.parse(await unpack(data)); } catch (e) { /* malformed link */ }
     const before = JSON.stringify(snapshot());
-    if (restore(link)) undo.push(before);
+    if (restore(link)) { undo.push(before); redo.length = 0; }
     render();
   }
   addEventListener('hashchange', openEditLink);
