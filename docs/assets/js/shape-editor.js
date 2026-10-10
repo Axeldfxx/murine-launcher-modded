@@ -62,7 +62,7 @@
     return out.join(' ') + ' Z';
   }
 
-  // ponytail: checks the polygon, not the rounded outline; good enough to catch crossed edges
+  // checks the polygon, not the rounded outline; good enough to catch crossed edges
   function selfIntersects(pts) {
     const n = pts.length;
     const o = (a, b, c) => Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
@@ -180,6 +180,16 @@
     }
     return ring;
   }
+  // Area centroid of the shape's own outline, mirrored copies excluded.
+  function centroid(sh) {
+    const r = flatten(shapePath(sh));
+    let a = 0, x = 0, y = 0;
+    r.forEach(([x0, y0], i) => {
+      const [x1, y1] = r[(i + 1) % r.length], c = x0 * y1 - x1 * y0;
+      a += c; x += (x0 + x1) * c; y += (y0 + y1) * c;
+    });
+    return { x: x / (3 * a), y: y / (3 * a) };
+  }
   // Ramer–Douglas–Peucker: drops points closer than tol to the line between their neighbours.
   function simplify(pts, tol) {
     if (pts.length < 4) return pts;
@@ -214,12 +224,16 @@
 
   const STORE = 'murine-shape-editor';
   let shapes, active = 0, mode = 'edit', sel = -1, drag = null, sliding = false;
+  let pickedCorner = -1; // Move mode: the selected resize corner (0 top left, clockwise), -1 for none
   let pts = null, fixed = null; // shortcuts into shapes[active]: its points, or its FIXED name
+  let synced = '';
   const sync = () => {
     active = clamp(active, 0, shapes.length - 1);
     pts = shapes[active].pts || null;
     fixed = shapes[active].fixed || null;
     if (fixed) mode = 'move';
+    if (synced !== active + mode) pickedCorner = -1; // another shape or mode: the corner selection goes
+    synced = active + mode;
   };
   const undo = [], redo = [];
 
@@ -259,7 +273,7 @@
     Uint8Array.from(atob(b64.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0)), new DecompressionStream('deflate-raw')));
   // Same path with the separators the launcher's parser also accepts: "M9.38,59.57L.5,-.97Z".
   const compactPath = (d) => d.replace(/ ?([MLCZ]) ?/g, '$1').replace(/ /g, ',').replace(/(^|[^\d])0\./g, '$1.');
-  const IMPORT = 'murine-home://icon-shape?shape='; // ponytail: the app side doesn't exist yet; it must validate the path
+  const IMPORT = 'murine-home://icon-shape?shape='; // the app side doesn't exist yet; it must validate the path
 
   // Built after every change, so a click can copy or open them without waiting.
   let links = { edit: '', import: '' }, linkRun = 0;
@@ -393,6 +407,7 @@
       boxCorners(b).forEach((c, i) => {
         const h = $('se-move').querySelectorAll('.se-resize')[i];
         h.setAttribute('x', c.x - 2); h.setAttribute('y', c.y - 2);
+        h.classList.toggle('selected', i === pickedCorner);
       });
     }
     $('se-fit-tools').hidden = $('se-mirror').hidden = !moving;
@@ -403,7 +418,15 @@
     // controls
     const editable = !!pts;
     $('se-corner-set').disabled = !editable;
-    $('se-point-set').disabled = !editable || moving;
+    // Top-left pill: the selected point (Edit mode) or the selected corner (Move mode).
+    const at = moving ? (pickedCorner >= 0 && activeBox ? boxCorners(activeBox)[pickedCorner] : null) : (pts && sel >= 0 ? pts[sel] : null);
+    $('se-point-pill').hidden = !at;
+    if (at) {
+      $('se-x').value = fmt(at.x); $('se-y').value = fmt(at.y);
+      $('se-point-pill').setAttribute('aria-label', moving ? 'Corner' : `Point ${sel + 1}`);
+      $('se-remove').hidden = moving;
+      $('se-remove').disabled = moving || pts.length <= 3;
+    }
     $('se-fixed-note').hidden = editable;
     if (editable) {
       const cur = pts[Math.max(sel, 0)];
@@ -426,9 +449,6 @@
         : 'Past the red mark it also shrinks the neighbouring corners';
       $('se-smooth').value = Math.round(cur.s * 100); $('se-smooth-v').textContent = Math.round(cur.s * 100) + '%';
       $('se-apply-all').disabled = sel < 0;
-      $('se-x').disabled = $('se-y').disabled = sel < 0;
-      $('se-x').value = sel >= 0 ? fmt(cur.x) : ''; $('se-y').value = sel >= 0 ? fmt(cur.y) : '';
-      $('se-remove').disabled = sel < 0 || pts.length <= 3;
     }
     $('se-undo').disabled = undo.length === 0;
     $('se-redo').disabled = redo.length === 0;
@@ -478,7 +498,7 @@
     const b = e.target.closest('[data-act]');
     if (!b) return;
     const i = +b.dataset.card;
-    if (b.dataset.act === 'pick') { active = i; sel = -1; mode = 'edit'; sync(); render(); }
+    if (b.dataset.act === 'pick') { active = i; sel = -1; sync(); render(); } // keeps the mode, like a tap on the canvas
     else if (b.dataset.act === 'edit' || b.dataset.act === 'move') { mode = b.dataset.act; sel = -1; sync(); render(); }
     else if (b.dataset.act === 'del') {
       if (!confirm(`Delete ${shapeName(shapes[i], i)}? Undo can still bring it back.`)) return;
@@ -540,10 +560,13 @@
   svg.addEventListener('click', () => {
     if (tap === null) return;
     if (tap >= 0 && tap !== active) { active = tap; sel = -1; mode = shapes[tap].fixed ? 'move' : mode; sync(); render(); }
-    else if (sel >= 0) { sel = -1; render(); }
+    else if (sel >= 0 || pickedCorner >= 0) { sel = -1; pickedCorner = -1; render(); }
     tap = null;
   });
 
+  // Clicks and taps focus the canvas too; this keeps Chrome from showing its keyboard focus ring for it.
+  svg.addEventListener('pointerdown', () => svg.setAttribute('data-pointer', ''), true);
+  svg.addEventListener('blur', () => svg.removeAttribute('data-pointer'));
   svg.addEventListener('pointerdown', (e) => {
     const g = grabAt(e.clientX, e.clientY, e.pointerType === 'touch');
     tap = g ? null : shapeAt(e);
@@ -562,6 +585,7 @@
     } else {
       const c = boxCorners(activeBox), anchor = c[(g.resize + 2) % 4];
       drag = { kind: 'resize', anchor, d0: dist(anchor, c[g.resize]), orig: shapes[active] };
+      pickedCorner = g.resize; // a tap selects the corner; a drag resizes too
     }
     svg.setPointerCapture(e.pointerId);
     e.preventDefault(); // this also stops the browser focusing the canvas, so do it here:
@@ -611,12 +635,13 @@
     // unless you're typing in a field or a dialog is open. Arrows still need the canvas focused, so elsewhere
     // they keep moving sliders and scrolling the page.
     const typing = e.target.matches('input:not([type=range]):not([type=checkbox]), textarea, select');
-    const pointKey = sel >= 0 && mode === 'edit' && ['Delete', 'Backspace', 'Escape'].includes(e.key)
-      && !typing && !e.target.closest('.contact-modal-overlay');
+    const pointKey = (sel >= 0 && mode === 'edit' && ['Delete', 'Backspace', 'Escape'].includes(e.key)
+      || pickedCorner >= 0 && e.key === 'Escape') && !typing && !e.target.closest('.contact-modal-overlay');
     if (!pointKey && !svg.contains(document.activeElement)) return;
     const step = grid.snap ? grid.step : e.shiftKey ? 5 : 0.5;
     const mv = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
-    if (mode === 'move') { // arrows move the whole shape
+    if (mode === 'move') { // arrows move the whole shape, Esc deselects the corner
+      if (e.key === 'Escape') { pickedCorner = -1; e.preventDefault(); return render(); }
       if (!mv) return;
       checkpoint();
       shapes[active] = transform(shapes[active], 1, 0, 0, mv[0] * step, mv[1] * step);
@@ -648,6 +673,17 @@
     shapes[active] = transform(shapes[active], k, bb.x + bb.width / 2, bb.y + bb.height / 2, 25, 25);
     sync(); render();
   };
+  // Moves the shape's centroid to the canvas centre. A mirrored axis uses the middle of the half the
+  // shape is in instead (25 or 75), so the shape and its copy stay balanced on each side.
+  $('se-center').onclick = () => {
+    const sh = shapes[active], c = centroid(sh);
+    if (!Number.isFinite(c.x + c.y)) return;
+    const h = sh.mirror === 'h' || sh.mirror === 'both', v = sh.mirror === 'v' || sh.mirror === 'both';
+    const tx = h ? (c.x <= 50 ? 25 : 75) : 50, ty = v ? (c.y <= 50 ? 25 : 75) : 50;
+    checkpoint();
+    shapes[active] = transform(sh, 1, c.x, c.y, tx, ty);
+    sync(); render();
+  };
   $('se-mirror').addEventListener('click', (e) => {
     const b = e.target.closest('[data-mirror]');
     if (!b || b.dataset.mirror === shapes[active].mirror) return;
@@ -675,13 +711,28 @@
   };
   ['x', 'y'].forEach((k) =>
     $('se-' + k).addEventListener('change', (e) => {
-      if (sel < 0 || e.target.value === '') return;
-      checkpoint();
-      pts[sel][k] = clamp(+e.target.value, view.lo, view.hi);
+      const v = clamp(+e.target.value, view.lo, view.hi);
+      if (e.target.value === '' || !Number.isFinite(v)) return render(); // puts the current value back
+      if (mode === 'move' && pickedCorner >= 0 && activeBox) {
+        // A corner moves with the opposite one fixed and the proportions kept, so the other coordinate follows.
+        const c = boxCorners(activeBox), a = c[(pickedCorner + 2) % 4], k0 = (v - a[k]) / (c[pickedCorner][k] - a[k]);
+        if (!(k0 > 0.05)) return render(); // not past the opposite corner, nor down to nothing
+        checkpoint();
+        shapes[active] = transform(shapes[active], k0, a.x, a.y, a.x, a.y);
+        sync();
+      } else if (pts && sel >= 0) {
+        checkpoint();
+        pts[sel][k] = v;
+      } else return;
       render();
     })
   );
-  $('se-remove').onclick = () => { checkpoint(); pts.splice(sel, 1); sel = -1; render(); };
+  // Greyed out at 3 points; should it get clicked anyway (re-enabled from the dev tools, say), it shakes like Delete.
+  $('se-remove').onclick = () => {
+    if (!pts || sel < 0) return;
+    if (pts.length <= 3) return shake();
+    checkpoint(); pts.splice(sel, 1); sel = -1; render();
+  };
   $('se-fit').onclick = () => { checkpoint(); shapes = fitted(shapes); sync(); render(); };
   // Undo and redo each move the current state onto the other stack.
   const travel = (from, to) => {
@@ -804,7 +855,7 @@
   render();
   openEditLink();
 
-  // ponytail: one self-check, runs on every load; the console says if the output format ever regresses
+  // one self-check, runs on every load; the console says if the output format ever regresses
   for (const sample of [buildPath(fit(PRESETS['Cookie 7']())), ...Object.values(FIXED), iconPath().d]) {
     console.assert(/^M [\d. -]+( [LC] [\d. -]+)* Z$/.test(sample) && !/[eE]|--|\.\d+\./.test(sample),
       'shape-editor: path not in launcher-safe format', sample);

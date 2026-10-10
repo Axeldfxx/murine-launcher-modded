@@ -22,7 +22,9 @@ noindex: true    # and out of search engines
 #se-canvas { width: 100%; aspect-ratio: 1; display: block; touch-action: manipulation; user-select: none;
              background: var(--md-surface-container-lowest); border: 1px solid var(--md-outline-variant);
              border-radius: var(--md-shape-lg); outline: none; }
-#se-canvas:focus-visible { box-shadow: 0 0 0 2px var(--md-primary); }
+/* Focus ring only when the canvas was reached with the keyboard: clicks and taps focus it too (so Delete
+   and the arrow keys work), and Chrome would then show the ring as soon as a key is pressed. */
+#se-canvas:focus-visible:not([data-pointer]) { box-shadow: 0 0 0 2px var(--md-primary); }
 .se-grid-line { stroke: var(--md-outline-variant); stroke-width: .15; }
 .se-grid-mid { stroke: var(--md-outline); stroke-width: .25; }
 .se-bounds { fill: none; stroke: var(--md-outline); stroke-width: .35; stroke-dasharray: 1.5 1; }
@@ -38,6 +40,7 @@ noindex: true    # and out of search engines
 .se-line.active.copy { stroke-width: .35; stroke-dasharray: 1.2 1; }
 .se-move-box { fill: transparent; stroke: var(--md-primary); stroke-width: .3; stroke-dasharray: 1 1; cursor: move; }
 .se-resize { fill: var(--md-surface-container-lowest); stroke: var(--md-primary); stroke-width: .5; }
+.se-resize.selected { fill: var(--md-primary); }
 .se-move-box, .se-resize { touch-action: none; }
 .se-outline { fill: none; stroke: var(--md-on-surface-variant); stroke-width: .25; stroke-dasharray: 1 1; }
 .se-handle { cursor: grab; outline: none; }
@@ -78,6 +81,23 @@ noindex: true    # and out of search engines
 .se-btn:hover:not(:disabled) { background: var(--md-surface-container); }
 .se-btn:disabled { opacity: .4; cursor: default; }
 .se-toolbar { margin: 0 0 12px; }
+/* Top-left pill: X / Y of the selected point (and its delete button) or of the selected Move-mode corner.
+   Same height, border and shadow as the mirror pill. */
+.se-pill { position: absolute; left: 10px; top: 10px; display: flex; align-items: center; gap: 8px; padding: 3px 3px 3px 12px;
+  border-radius: var(--md-shape-full); border: 1px solid var(--md-outline-variant);
+  background: var(--md-surface-container-low); box-shadow: var(--md-shadow); font-size: .82rem; }
+.se-pill:has(#se-remove[hidden]) { padding-right: 8px; }
+.se-pill[hidden], .se-pill button[hidden] { display: none; }
+.se-pill label { display: flex; align-items: center; gap: 4px; color: var(--md-on-surface-variant); }
+.se-pill input { width: 4.2em; height: 28px; padding: 0 6px; font: inherit; color: var(--md-on-surface);
+  background: var(--md-surface-container); border: 1px solid var(--md-outline-variant); border-radius: var(--md-shape-xs); }
+.se-pill button { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; padding: 0;
+  border: 0; border-radius: var(--md-shape-full); background: transparent; color: var(--md-primary); cursor: pointer; }
+.se-pill button:hover:not(:disabled) { background: var(--md-surface-container-high); }
+.se-pill button:disabled { opacity: .35; cursor: default; }
+.se-pill .material-symbols-outlined { font-size: 20px; }
+@media (pointer: fine) { .se-pill input { width: calc(6ch + 22px); } } /* room for "-12.50" plus the spin arrows */
+.se-canvas-hint { margin-top: 2px; }
 .se-hint { font-size: .8rem; color: var(--md-on-surface-variant); line-height: 1.5; margin: 8px 0 0; }
 
 .se-result { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: center; margin-top: 1rem; }
@@ -111,7 +131,7 @@ noindex: true    # and out of search engines
 @media (prefers-reduced-motion: reduce) { .se-shake { animation: none; } }
 .se-stage-btn, .se-mirror button { display: inline-flex; align-items: center; justify-content: center; padding: 0;
   border-radius: var(--md-shape-full); color: var(--md-primary); cursor: pointer; }
-.se-stage-tools { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; }
+.se-stage-tools { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 6px; }
 .se-stage-btn { width: 40px; height: 40px;
   border: 1px solid var(--md-outline-variant); background: var(--md-surface-container-low); box-shadow: var(--md-shadow); }
 .se-mirror { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 2px; padding: 3px;
@@ -183,8 +203,9 @@ noindex: true    # and out of search engines
         </g>
       </svg>
       <div id="se-fit-tools" class="se-stage-tools" hidden>
-        <button id="se-fit-quarter" class="se-stage-btn" type="button" title="Fit this shape into the top-left quarter" aria-label="Fit this shape into the top-left quarter"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="3 2"/><rect x="5.5" y="5.5" width="6.5" height="6.5" rx="1.5" fill="currentColor"/></svg></button>
         <button id="se-fit-shape" class="se-stage-btn" type="button" title="Fit this shape to the box" aria-label="Fit this shape to the box"><span class="material-symbols-outlined" aria-hidden="true">&#xea10;</span></button>
+        <button id="se-fit-quarter" class="se-stage-btn" type="button" title="Fit this shape into the top-left quarter" aria-label="Fit this shape into the top-left quarter"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="3 2"/><rect x="5.5" y="5.5" width="6.5" height="6.5" rx="1.5" fill="currentColor"/></svg></button>
+        <button id="se-center" class="se-stage-btn" type="button" title="Centre this shape" aria-label="Centre this shape"><span class="material-symbols-outlined" aria-hidden="true">&#xe3dc;</span></button>
       </div>
       <div id="se-mirror" class="se-mirror" role="group" aria-label="Mirror" hidden>
         <button type="button" data-mirror="none" title="No mirroring" aria-label="No mirroring"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M6 4l6 6-6 6z"/></svg></button>
@@ -192,8 +213,16 @@ noindex: true    # and out of search engines
         <button type="button" data-mirror="v" title="Mirror top and bottom" aria-label="Mirror top and bottom"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 10h16" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 1.6" fill="none"/><path d="M5 2l5 5 5-5zM5 18l5-5 5 5z"/></svg></button>
         <button type="button" data-mirror="both" title="Mirror both ways" aria-label="Mirror both ways"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2v16M2 10h16" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 1.6" fill="none"/><path d="M2 2h5l-5 5zM18 2h-5l5 5zM2 18h5l-5-5zM18 18h-5l5-5z"/></svg></button>
       </div>
+      <div id="se-point-pill" class="se-pill" role="group" aria-label="Point" hidden>
+        <label>X <input id="se-x" type="number" step="0.5" inputmode="decimal"></label>
+        <label>Y <input id="se-y" type="number" step="0.5" inputmode="decimal"></label>
+        <button id="se-remove" type="button" title="Remove point" aria-label="Remove point"><span class="material-symbols-outlined" aria-hidden="true">&#xe92e;</span></button>
+      </div>
     </div>
     <div id="se-cards" class="se-cards" role="list" aria-label="Shapes"></div>
+    <p class="se-hint se-canvas-hint">Edit mode: drag a point to move it, drag a <strong>+</strong> to add one; with a point
+      selected, arrow keys nudge it, Delete removes it, Esc deselects. Move mode: drag the shape, or a corner to resize it;
+      tap a corner to set its position.</p>
   </div>
 
   <div class="se-panel">
@@ -214,15 +243,6 @@ noindex: true    # and out of search engines
       <input id="se-smooth" type="range" min="0" max="100" step="1">
       <div class="se-scale"><span>Cut</span><span>Round</span><span>Squircle</span></div>
       <div class="se-row"><button id="se-apply-all" class="se-btn" type="button">Apply to all corners</button></div>
-    </fieldset>
-
-    <fieldset id="se-point-set">
-      <legend>Point</legend>
-      <label>X <input id="se-x" type="number" step="0.5"></label>
-      <label>Y <input id="se-y" type="number" step="0.5"></label>
-      <div class="se-row"><button id="se-remove" class="se-btn" type="button">Remove point</button></div>
-      <p class="se-hint">Drag a point to move it, drag a <strong>+</strong> to add one.
-        With a point selected: arrow keys nudge it, Delete removes it, Esc deselects.</p>
     </fieldset>
 
     <fieldset>
