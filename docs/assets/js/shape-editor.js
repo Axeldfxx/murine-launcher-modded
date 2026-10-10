@@ -341,8 +341,9 @@
     const crossed = shapes.findIndex((sh) => sh.pts && selfIntersects(sh.pts));
     const bad = !!out.error || crossed >= 0;
 
-    // Each shape and mirrored copy is filled and outlined on its own; the selected one is drawn last, on top.
-    const order = shapes.map((_, i) => i).filter((i) => i !== active).concat(active); // selected shape on top
+    // Each shape and mirrored copy is filled and outlined on its own. The selected one is drawn last: while
+    // selected it sits on top, and clicks on it reach it first (see shapeAt).
+    const order = shapes.map((_, i) => i).filter((i) => i !== active).concat(active);
     const strokes = order.flatMap((i) => lines[i].map((d, c) => ({ d, cls: 'se-line' + (i === active ? ' active' : '') + (c ? ' copy' : '') })));
     const layer = $('se-lines');
     resize(layer, strokes.length, () => el('path', {}));
@@ -516,12 +517,15 @@
     });
     return best;
   }
-  // The topmost shape whose outline (or a mirrored copy) contains the point, else -1.
+  // The shape under the point: the selected one first (it's drawn on top while selected), then the others
+  // from the top of the stack down. -1 for empty space. Mirrored copies count as their shape.
   function shapeAt(e) {
-    const p = toSvg(e), m = $('se-measure-path');
-    for (let i = shapes.length - 1; i >= 0; i--) {
-      for (const d of copies(shapes[i])) { m.setAttribute('d', d); if (m.isPointInFill(new DOMPoint(p.x, p.y))) return i; }
-    }
+    const p = toSvg(e), m = $('se-measure-path'), hit = (i) => copies(shapes[i]).some((d) => {
+      m.setAttribute('d', d);
+      return m.isPointInFill(new DOMPoint(p.x, p.y));
+    });
+    if (hit(active)) return active;
+    for (let i = shapes.length - 1; i >= 0; i--) if (i !== active && hit(i)) return i;
     return -1;
   }
 
