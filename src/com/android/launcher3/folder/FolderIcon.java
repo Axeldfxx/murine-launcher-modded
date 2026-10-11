@@ -225,7 +225,7 @@ public class FolderIcon extends FrameLayout implements FloatingIconViewCompanion
         icon.setAccessibilityDelegate(activity.getAccessibilityDelegate());
 
         icon.mPreviewVerifier = createFolderGridOrganizer(activity.getDeviceProfile());
-        icon.mPreviewVerifier.setLargePreview(icon.isSuperFolder());
+        icon.mPreviewVerifier.setLargePreview(icon.isSuperFolder(), icon.getSuperStyle());
         icon.mPreviewVerifier.setFolderInfo(folderInfo);
         icon.updatePreviewItems(false);
 
@@ -242,10 +242,15 @@ public class FolderIcon extends FrameLayout implements FloatingIconViewCompanion
         return mInfo != null && (mInfo.spanX > 1 || mInfo.spanY > 1);
     }
 
-    /** How many items the preview shows: 9 for super folders, 4 otherwise. */
+    /** The super folder style (quadrant, grid, circle, cover). */
+    public int getSuperStyle() {
+        return mInfo != null ? mInfo.getSuperStyle() : FolderInfo.STYLE_QUADRANT;
+    }
+
+    /** How many items the preview shows: depends on the style for super folders, 4 otherwise. */
     public int getMaxPreviewItems() {
         return isSuperFolder()
-                ? ClippedFolderIconLayoutRule.MAX_NUM_ITEMS_IN_LARGE_PREVIEW
+                ? ClippedFolderIconLayoutRule.maxItemsForStyle(getSuperStyle())
                 : MAX_NUM_ITEMS_IN_PREVIEW;
     }
 
@@ -622,6 +627,8 @@ public class FolderIcon extends FrameLayout implements FloatingIconViewCompanion
     }
 
     public void drawDot(Canvas canvas) {
+        // Super folders draw a badge on each app icon instead (see PreviewItemManager).
+        if (isSuperFolder()) return;
         if (!mForceHideDot && ((mDotInfo != null && mDotInfo.hasDot()) || mDotScale > 0)) {
             Rect iconBounds = mDotParams.iconBounds;
             // FolderIcon draws the icon to be top-aligned (with padding) & horizontally-centered
@@ -704,7 +711,7 @@ public class FolderIcon extends FrameLayout implements FloatingIconViewCompanion
      * Returns the list of items which should be visible in the preview
      */
     public List<ItemInfo> getPreviewItemsOnPage(int page) {
-        mPreviewVerifier.setLargePreview(isSuperFolder());
+        mPreviewVerifier.setLargePreview(isSuperFolder(), getSuperStyle());
         return mPreviewVerifier.setFolderInfo(mInfo).previewItemsForPage(page, mInfo.getContents());
     }
 

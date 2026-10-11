@@ -359,7 +359,8 @@ public class FolderAnimationManager {
      * Returns the list of "preview items" on {@param page}.
      */
     private List<View> getPreviewIconsOnPage(int page) {
-        mPreviewVerifier.setLargePreview(mFolderIcon.isSuperFolder());
+        mPreviewVerifier.setLargePreview(mFolderIcon.isSuperFolder(),
+                mFolderIcon.getSuperStyle());
         return mPreviewVerifier.setFolderInfo(mFolder.mInfo)
                 .previewItemsForPage(page, mFolder.getIconsInReadingOrder());
     }

@@ -46,9 +46,18 @@ public class FolderGridOrganizer {
     private int mPreviewRows = 2;
     private int mPreviewColumns = 2;
 
-    /** Switches between the normal 2x2 preview and the super folder 3x3 preview. */
-    public void setLargePreview(boolean large) {
-        mMaxPreviewItems = large ? 9 : 4;
+    // Quadrant / circle / cover styles preview the first N items in reading order.
+    private boolean mSequentialPreview = false;
+
+    /**
+     * Switches between the normal 2x2 preview and the super folder previews.
+     *
+     * @param style one of the {@link FolderInfo} STYLE_* constants (ignored when not large)
+     */
+    public void setLargePreview(boolean large, int style) {
+        mSequentialPreview = large && style != FolderInfo.STYLE_GRID;
+        mMaxPreviewItems = large
+                ? ClippedFolderIconLayoutRule.maxItemsForStyle(style) : 4;
         mPreviewRows = large ? 3 : 2;
         mPreviewColumns = large ? 3 : 2;
     }
@@ -211,6 +220,9 @@ public class FolderGridOrganizer {
      * @return True iff the icon is in the 3x3 upper left corner of the Folder.
      */
     public boolean isItemInPreview(int page, int rank) {
+        if (mSequentialPreview) {
+            return page == 0 && rank < mMaxPreviewItems;
+        }
         // First page items are laid out such that the first 4 items are always in the upper
         // left quadrant. For all other pages, we need to check the row and col.
         if (page > 0 || mDisplayingUpperLeftQuadrant) {

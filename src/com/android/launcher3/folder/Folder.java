@@ -314,7 +314,7 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         mFooter = findViewById(R.id.folder_footer);
         mSizeToggle = findViewById(R.id.folder_size_toggle);
         if (mSizeToggle != null) {
-            mSizeToggle.setOnClickListener(v -> toggleSuperFolder());
+            mSizeToggle.setOnClickListener(v -> showStyleChooser());
         }
         mFooterHeight = dp.folderFooterHeightPx;
         mFolderName = findViewById(R.id.folder_name);
@@ -420,7 +420,42 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         boolean onDesktop = mInfo.container
                 == com.android.launcher3.LauncherSettings.Favorites.CONTAINER_DESKTOP;
         mSizeToggle.setVisibility(onDesktop ? VISIBLE : GONE);
-        mSizeToggle.setText(mFolderIcon != null && mFolderIcon.isSuperFolder() ? "Small" : "Large");
+        mSizeToggle.setText("Style");
+    }
+
+    /** Lets the user pick: Small (normal folder) or one of the super folder styles. */
+    private void showStyleChooser() {
+        final FolderIcon icon = mFolderIcon;
+        final FolderInfo info = mInfo;
+        if (icon == null || info == null) return;
+        final String[] labels = {"Small", "Quadrant", "Grid", "Circle", "Cover"};
+        final int checked = icon.isSuperFolder() ? 1 + info.getSuperStyle() : 0;
+        new android.app.AlertDialog.Builder(getContext())
+                .setTitle("Folder style")
+                .setSingleChoiceItems(labels, checked, (dialog, which) -> {
+                    dialog.dismiss();
+                    applyStyleChoice(which);
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void applyStyleChoice(int which) {
+        final FolderIcon icon = mFolderIcon;
+        final FolderInfo info = mInfo;
+        if (icon == null || info == null) return;
+        if (which == 0) {
+            if (icon.isSuperFolder()) toggleSuperFolder();
+            return;
+        }
+        if (!icon.isSuperFolder()) {
+            toggleSuperFolder();
+            if (!icon.isSuperFolder()) return; // no free 2x2 area
+        }
+        info.setSuperStyle(which - 1, mLauncherDelegate.getModelWriter());
+        icon.onItemsChanged(false);
+        icon.invalidate();
+        icon.requestLayout();
     }
 
     /**

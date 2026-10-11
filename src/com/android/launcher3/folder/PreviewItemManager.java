@@ -31,6 +31,7 @@ import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PointF;
 import android.graphics.Rect;
@@ -41,6 +42,8 @@ import android.view.View;
 import androidx.annotation.NonNull;
 import androidx.annotation.VisibleForTesting;
 
+import com.android.launcher3.LauncherPrefs;
+import com.android.launcher3.dot.DotInfo;
 import com.android.launcher3.BubbleTextView;
 import com.android.launcher3.Flags;
 import com.android.launcher3.LauncherAppState;
@@ -150,18 +153,22 @@ public class PreviewItemManager {
 
     private int mPrevPreviewOverride;
     private boolean mPrevLarge;
+    private int mPrevStyle;
 
     private void computePreviewDrawingParams(int drawableSize, int totalSize) {
         if (mIntrinsicIconSize != drawableSize || mTotalWidth != totalSize ||
                 mPrevTopPadding != mIcon.getPaddingTop()
                 || mPrevPreviewOverride != mIcon.mBackground.previewSizeOverride
-                || mPrevLarge != mIcon.isSuperFolder()) {
+                || mPrevLarge != mIcon.isSuperFolder()
+                || mPrevStyle != mIcon.getSuperStyle()) {
             mIntrinsicIconSize = drawableSize;
             mTotalWidth = totalSize;
             mPrevTopPadding = mIcon.getPaddingTop();
             mPrevPreviewOverride = mIcon.mBackground.previewSizeOverride;
             mPrevLarge = mIcon.isSuperFolder();
+            mPrevStyle = mIcon.getSuperStyle();
             mIcon.mPreviewLayoutRule.setLarge(mPrevLarge);
+            mIcon.mPreviewLayoutRule.setStyle(mPrevStyle);
 
             mIcon.mBackground.setup(mIcon.getContext(), mIcon.mActivity, mIcon, mTotalWidth,
                     mIcon.getPaddingTop());
@@ -257,6 +264,55 @@ public class PreviewItemManager {
             canvas.scale(mIntrinsicIconSize / bounds.width(), mIntrinsicIconSize / bounds.height());
             d.draw(canvas);
             canvas.restore();
+        }
+        canvas.restore();
+        drawItemBadge(canvas, params, offset);
+    }
+
+    private final Paint mBadgePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint mBadgeTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+    /**
+     * Super folders show a notification badge on every app icon (instead of one badge for the
+     * whole folder): a count if "notification count" is enabled, otherwise a dot.
+     */
+    private void drawItemBadge(Canvas canvas, PreviewItemDrawingParams params, PointF offset) {
+        if (!mIcon.isSuperFolder() || params.item == null || params.drawable == null) {
+            return;
+        }
+        DotInfo dot = mIcon.mActivity.getDotInfoForItem(params.item);
+        if (dot == null) {
+            // no notifications for this app
+            return;
+        }
+        boolean showCount = true; // always a number badge per app
+        int count = dot.getNotificationCount();
+        String text = count > 99 ? "99+" : String.valueOf(Math.max(count, 1));
+
+        float size = mIntrinsicIconSize;
+        float radius = size * (showCount ? 0.2f : 0.13f);
+        float cx = size - radius * 0.5f;
+        float cy = radius * 0.5f;
+
+        canvas.save();
+        canvas.translate(offset.x + params.transX, offset.y + params.transY);
+        canvas.scale(params.scale, params.scale);
+        mBadgePaint.setStyle(Paint.Style.FILL);
+        mBadgePaint.setColor(0xFFFF3B30);
+        if (showCount && text.length() > 1) {
+            float halfW = radius * (text.length() > 2 ? 1.5f : 1.2f);
+            canvas.drawRoundRect(cx - halfW, cy - radius, cx + halfW, cy + radius,
+                    radius, radius, mBadgePaint);
+        } else {
+            canvas.drawCircle(cx, cy, radius, mBadgePaint);
+        }
+        if (showCount) {
+            mBadgeTextPaint.setColor(0xFFFFFFFF);
+            mBadgeTextPaint.setTextAlign(Paint.Align.CENTER);
+            mBadgeTextPaint.setFakeBoldText(true);
+            mBadgeTextPaint.setTextSize(radius * 1.25f);
+            Paint.FontMetrics fm = mBadgeTextPaint.getFontMetrics();
+            canvas.drawText(text, cx, cy - (fm.ascent + fm.descent) / 2f, mBadgeTextPaint);
         }
         canvas.restore();
     }
