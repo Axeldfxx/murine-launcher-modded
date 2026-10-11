@@ -92,9 +92,7 @@ public class ItemLongClickListener {
 
         // Home screen locked: still show the long-press popup but never start the drag
         if (!launcher.isDraggingEnabled()) {
-            if (v instanceof BubbleTextView btv && btv.canShowLongPressPopup()) {
-                btv.startLongPressAction();
-            }
+            showPopupWithoutDrag(v);
             return true;
         }
 
@@ -171,8 +169,6 @@ public class ItemLongClickListener {
                 : view;
         Launcher launcher = Launcher.getLauncher(v.getContext());
         if (!canStartDrag(launcher)) return false;
-        // Never let an app be dragged out of the drawer onto a locked home screen.
-        if (!launcher.isDraggingEnabled()) return false;
         // When we have exited all apps or are in transition, disregard long clicks
         if (!launcher.isInState(ALL_APPS) && !launcher.isInState(OVERVIEW)) return false;
         if (launcher.getWorkspace().isSwitchingState()) return false;
@@ -189,6 +185,12 @@ public class ItemLongClickListener {
             logger.withItemInfo((ItemInfo) v.getTag());
         }
         logger.log(LAUNCHER_ALLAPPS_ITEM_LONG_PRESSED);
+
+        // Home screen locked: show the popup but never drag the app out of the drawer.
+        if (!launcher.isDraggingEnabled()) {
+            showPopupWithoutDrag(v);
+            return true;
+        }
 
         // Start the drag
         final DragController dragController = launcher.getDragController();
@@ -207,6 +209,16 @@ public class ItemLongClickListener {
 
         launcher.getWorkspace().beginDragShared(v, launcher.getAppsView(), new DragOptions());
         return false;
+    }
+
+    /**
+     * Shows the long-press popup without starting a drag (home screen locked).
+     */
+    public static void showPopupWithoutDrag(View v) {
+        if (v instanceof BubbleTextView btv && btv.canShowLongPressPopup()) {
+            btv.startLongPressAction();
+        }
+        if (v.getParent() != null) v.getParent().requestDisallowInterceptTouchEvent(true);
     }
 
     public static boolean canStartDrag(Launcher launcher) {

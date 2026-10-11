@@ -51,8 +51,9 @@ languages:
   - code: pt
     name: Portuguese
     native: Português
-    status: ai
+    status: reviewed
     strings: 148
+    by_git: Marcos6226
 
   - code: ru
     name: Russian
