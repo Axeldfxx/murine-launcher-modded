@@ -117,6 +117,12 @@
     Flower: () => polygon(6, 0.62, 0, 30, 2),
     Burst: () => polygon(12, 0.86, 0, 4, 2),
     Diamond: () => polygon(4, 1, 0, 16),
+    // Two circular lobes meeting at a sharp notch, slightly rounded sides and a softened tip. Each lobe is three
+    // corners of a polygon around its circle, rounded (at s 0.5) exactly into arcs of that circle. The side corners
+    // take all the room the lobes leave (27.2), so no straight piece is left between a lobe and its side.
+    Heart: () => [[50, 21.02, 0, 0], [55.64, 4.94, 17.05, 0.5], [89.68, 2.82, 17.05, 0.5], [104.9, 33.32, 17.04, 0.5],
+      [80, 70, 27.2, 0.6], [50, 97.53, 2.92, 0.5], [20, 70, 27.2, 0.6], [-4.9, 33.32, 17.04, 0.5], [10.32, 2.82, 17.05, 0.5],
+      [44.36, 4.94, 17.05, 0.5]].map(([x, y, r, s]) => ({ x, y, r, s })),
   };
 
   // Ready-made paths that can't be expressed as one rounded polygon, so they aren't editable point by point.
@@ -169,6 +175,7 @@
   // decomposition); U and k go into the normal shape, where they're exact (corner sizes scale with k), and the
   // stretch is kept on its own. Nothing is rounded beyond 1e-6, so undoing a stretch by hand lands back exactly.
   const r6 = (n) => Math.round(n * 1e6) / 1e6;
+  const wrap = (deg) => { const r = ((deg % 360) + 360) % 360; return r > 360 - 1e-9 ? 0 : r; }; // into 0-360, unrounded
   function applyWorld(sh, A, tx, ty) {
     const [a, b, d, cx, cy] = sh.st || [1, 0, 1, 0, 0];
     const m = [A[0] * a + A[1] * b, A[0] * b + A[1] * d, A[2] * a + A[3] * b, A[2] * b + A[3] * d];
@@ -182,7 +189,10 @@
     const T = (x, y) => ({ x: nx + k * (cs * (x - cx) - sn * (y - cy)), y: ny + k * (sn * (x - cx) + cs * (y - cy)) });
     // Back within 1e-4 of no stretch (say, an edge dragged back onto its grid line): no stretch.
     const none = Math.abs(sxx - 1) < 1e-4 && Math.abs(syy - 1) < 1e-4 && Math.abs(sxy) < 1e-4;
-    const out = { ...sh };
+    // The turn U also counts towards the rotation pill: stretching along a direction that isn't the
+    // current stretch's own turns the shape a little (like two boosts in different directions), and the
+    // pill should still read the shape's real angle, so that 0 brings it back upright.
+    const out = { ...sh, rot: wrap((sh.rot || 0) + th * 180 / Math.PI) };
     if (none) delete out.st; else out.st = [sxx, sxy, syy, nx, ny];
     if (sh.fixed) {
       const f = FIXED_C[sh.fixed], o = T(f.x * sh.a + sh.x, f.y * sh.a + sh.y), na = sh.a * k;
@@ -276,10 +286,10 @@
       return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
     } finally { digits = 2; }
   };
-  // Turns a shape by deg (clockwise) around its pivot; a stretch turns with it. rot only keeps the running
-  // total for the rotation pill.
+  // Turns a shape by deg (clockwise) around its pivot; a stretch turns with it. rot is the running total the
+  // rotation pill shows, kept unrounded.
   function rotated(sh, deg) {
-    const rot = r2((((sh.rot || 0) + deg) % 360 + 360) % 360) % 360;
+    const rot = wrap((sh.rot || 0) + deg); // exact, rather than the same turn read back from the matrix
     const c = pivot(sh), t = deg * Math.PI / 180, cos = Math.cos(t), sin = Math.sin(t);
     return { ...applyWorld(sh, [cos, -sin, sin, cos], c.x - cos * c.x + sin * c.y, c.y - sin * c.x - cos * c.y), rot };
   }
@@ -336,7 +346,7 @@
   const snapshot = () => ({ shapes, active });
   // Also reads edit links, i.e. anything anyone can type into a URL: rebuild every field, keep nothing unchecked.
   function cleanShape(s) {
-    const mirror = Object.hasOwn(MIRRORS, s?.mirror) ? s.mirror : 'none', rot = r2((((+(s?.rot ?? 0)) % 360) + 360) % 360) % 360;
+    const mirror = Object.hasOwn(MIRRORS, s?.mirror) ? s.mirror : 'none', rot = wrap(+(s?.rot ?? 0));
     if (!Number.isFinite(rot)) return null;
     // The stretch: a symmetric matrix brought back to determinant 1, and its centre.
     let st;
@@ -555,7 +565,7 @@
     $('se-rot-pill').hidden = !moving || !!at;
     if (moving && !at) {
       const rot = shapes[active].rot || 0;
-      $('se-turn').value = rot; $('se-turn-val').value = Math.round(rot) + '°'; $('se-turn-num').value = fmt(rot);
+      $('se-turn').value = rot; $('se-turn-val').value = Math.round(rot) % 360 + '°'; $('se-turn-num').value = fmt(r2(rot) % 360);
       $('se-turn').hidden = $('se-turn-val').hidden = turnTyping; $('se-turn-type').hidden = !turnTyping;
       $('se-turn-mode').setAttribute('aria-pressed', turnTyping);
     }
