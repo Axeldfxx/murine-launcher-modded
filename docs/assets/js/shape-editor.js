@@ -129,7 +129,7 @@
   const MIRRORS = { none: [], h: [[-1, 1]], v: [[1, -1]], both: [[-1, 1], [1, -1], [-1, -1]] };
   // Rewrites every coordinate pair of one of our own paths (absolute M/L/C/Z, single spaces).
   const mapPath = (d, f) => d.replace(/(-?[\d.]+) (-?[\d.]+)/g, (_, x, y) => { const p = f(+x, +y); return fmt(p.x) + ' ' + fmt(p.y); });
-  // Centroid of each FIXED path in its own 0-100 frame: what it rotates around.
+  // Centroid of each FIXED path in its own 0-100 frame: the point its rot is drawn around.
   const FIXED_C = Object.fromEntries(Object.entries(FIXED).map(([k, d]) => [k, ringCentroid(flatten(d))]));
   function shapePath(sh) {
     if (!sh.fixed) return buildPath(sh.pts);
@@ -201,13 +201,26 @@
     });
     return { x: x / (3 * a), y: y / (3 * a) };
   }
-  // Turns a shape by deg (clockwise) around its centroid. rot keeps the running total for the pill;
-  // FIXED shapes are drawn from it, point shapes get their points turned.
+  // The point a shape rotates and centres around, as picked in the Move pill: the middle of its box, or its
+  // centre of mass. Only the box one moves as the shape turns.
+  let pivotMode = 'box';
+  const pivot = (sh) => {
+    if (pivotMode === 'mass') return centroid(sh);
+    const b = measure(shapePath(sh));
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  };
+  // Turns a shape by deg (clockwise) around its pivot. rot keeps the running total for the pill;
+  // FIXED shapes are drawn from it (around their own centroid, then shifted so the pivot stays put),
+  // point shapes get their points turned.
   function rotated(sh, deg) {
     const rot = r2((((sh.rot || 0) + deg) % 360 + 360) % 360) % 360;
-    if (sh.fixed) return { ...sh, rot };
-    const c = centroid(sh), t = deg * Math.PI / 180, cos = Math.cos(t), sin = Math.sin(t);
-    return { ...sh, rot, pts: sh.pts.map((p) => ({ ...p, x: r2(c.x + (p.x - c.x) * cos - (p.y - c.y) * sin), y: r2(c.y + (p.x - c.x) * sin + (p.y - c.y) * cos) })) };
+    const c = pivot(sh), t = deg * Math.PI / 180, cos = Math.cos(t), sin = Math.sin(t);
+    const turn = (x, y) => ({ x: c.x + (x - c.x) * cos - (y - c.y) * sin, y: c.y + (x - c.x) * sin + (y - c.y) * cos });
+    if (sh.fixed) {
+      const f = FIXED_C[sh.fixed], wx = f.x * sh.a + sh.x, wy = f.y * sh.a + sh.y, w = turn(wx, wy);
+      return { ...sh, rot, x: r2(sh.x + w.x - wx), y: r2(sh.y + w.y - wy) };
+    }
+    return { ...sh, rot, pts: sh.pts.map((p) => { const q = turn(p.x, p.y); return { ...p, x: r2(q.x), y: r2(q.y) }; }) };
   }
   // Ramer–Douglas–Peucker: drops points closer than tol to the line between their neighbours.
   function simplify(pts, tol) {
@@ -432,7 +445,9 @@
       });
     }
     $('se-fit-tools').hidden = $('se-mirror').hidden = !moving;
-    for (const b of $('se-mirror').querySelectorAll('button')) b.setAttribute('aria-pressed', b.dataset.mirror === shapes[active].mirror);
+    for (const b of $('se-mirror').querySelectorAll('[data-mirror]')) b.setAttribute('aria-pressed', b.dataset.mirror === shapes[active].mirror);
+    for (const b of $('se-mirror').querySelectorAll('[data-pivot]')) b.setAttribute('aria-pressed', b.dataset.pivot === pivotMode);
+    if (moving) { const c = pivot(shapes[active]); $('se-pivot-mark').setAttribute('transform', `translate(${c.x} ${c.y})`); }
 
     renderCards();
 
@@ -702,10 +717,10 @@
     shapes[active] = transform(shapes[active], k, bb.x + bb.width / 2, bb.y + bb.height / 2, 25, 25);
     sync(); render();
   };
-  // Moves the shape's centroid to the canvas centre. A mirrored axis uses the middle of the half the
+  // Moves the shape's pivot to the canvas centre. A mirrored axis uses the middle of the half the
   // shape is in instead (25 or 75), so the shape and its copy stay balanced on each side.
   $('se-center').onclick = () => {
-    const sh = shapes[active], c = centroid(sh);
+    const sh = shapes[active], c = pivot(sh);
     if (!Number.isFinite(c.x + c.y)) return;
     const h = sh.mirror === 'h' || sh.mirror === 'both', v = sh.mirror === 'v' || sh.mirror === 'both';
     const tx = h ? (c.x <= 50 ? 25 : 75) : 50, ty = v ? (c.y <= 50 ? 25 : 75) : 50;
@@ -713,6 +728,10 @@
     shapes[active] = transform(sh, 1, c.x, c.y, tx, ty);
     sync(); render();
   };
+  $('se-mirror').addEventListener('click', (e) => {
+    const p = e.target.closest('[data-pivot]');
+    if (p) { pivotMode = p.dataset.pivot; render(); }
+  });
   $('se-mirror').addEventListener('click', (e) => {
     const b = e.target.closest('[data-mirror]');
     if (!b || b.dataset.mirror === shapes[active].mirror) return;

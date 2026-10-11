@@ -144,6 +144,8 @@ noindex: true    # and out of search engines
 .se-mirror button { width: 34px; height: 34px; border: 0; background: transparent; }
 .se-mirror button[aria-pressed="true"] { background: var(--md-primary-container); color: var(--md-on-primary-container); }
 .se-mirror svg { width: 20px; height: 20px; }
+.se-pivot { display: flex; gap: 2px; padding-left: 5px; margin-left: 3px; border-left: 1px solid var(--md-outline-variant); }
+.se-pivot-mark { pointer-events: none; fill: none; stroke: var(--md-primary); stroke-width: .6; stroke-linecap: round; }
 .se-stage-btn:hover, .se-mirror button:hover { background: var(--md-surface-container-high); }
 .se-stage-tools[hidden], .se-mirror[hidden] { display: none; }
 .se-stage-btn svg { width: 22px; height: 22px; }
@@ -204,6 +206,7 @@ noindex: true    # and out of search engines
           <rect class="se-resize" width="4" height="4" style="cursor: nesw-resize"/>
           <rect class="se-resize" width="4" height="4" style="cursor: nwse-resize"/>
           <rect class="se-resize" width="4" height="4" style="cursor: nesw-resize"/>
+          <g id="se-pivot-mark" class="se-pivot-mark"><circle r="1.8"/><path d="M0 -4V-2.2M0 2.2V4M-4 0H-2.2M2.2 0H4"/><circle r=".5" fill="var(--md-primary)" stroke="none"/></g>
         </g>
       </svg>
       <div id="se-fit-tools" class="se-stage-tools" hidden>
@@ -216,6 +219,10 @@ noindex: true    # and out of search engines
         <button type="button" data-mirror="h" title="Mirror left and right" aria-label="Mirror left and right"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2v16" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 1.6" fill="none"/><path d="M2 5l5 5-5 5zM18 5l-5 5 5 5z"/></svg></button>
         <button type="button" data-mirror="v" title="Mirror top and bottom" aria-label="Mirror top and bottom"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 10h16" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 1.6" fill="none"/><path d="M5 2l5 5 5-5zM5 18l5-5 5 5z"/></svg></button>
         <button type="button" data-mirror="both" title="Mirror both ways" aria-label="Mirror both ways"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2v16M2 10h16" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 1.6" fill="none"/><path d="M2 2h5l-5 5zM18 2h-5l5 5zM2 18h5l-5-5zM18 18h-5l5-5z"/></svg></button>
+        <span class="se-pivot" role="group" aria-label="Centre point, for rotating and centring">
+          <button type="button" data-pivot="box" title="Rotate and centre around the middle of the box" aria-label="Middle of the box"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="3 2"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/></svg></button>
+          <button type="button" data-pivot="mass" title="Rotate and centre around the centre of mass" aria-label="Centre of mass"><svg viewBox="0 0 24 24"><path d="M12 3.5 21 19.5H3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="14.2" r="1.6" fill="currentColor"/><path d="M12 10.6v1.6M12 16.2v1.6M8.4 14.2h1.6M14 14.2h1.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        </span>
       </div>
       <div id="se-rot-pill" class="se-pill" role="group" aria-label="Rotation" hidden>
         <button id="se-turn-mode" type="button" aria-pressed="false" title="Type the angle" aria-label="Type the angle"><span class="material-symbols-outlined" aria-hidden="true">&#xe41a;</span></button>
