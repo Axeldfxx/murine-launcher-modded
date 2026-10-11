@@ -18,7 +18,9 @@
   // shows a margin around it and grows when something reaches further out.
   const view = { lo: -20, hi: 120 };
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-  const fmt = (n) => String(+n.toFixed(2)); // +"…" drops trailing zeros and "-0"
+  // Paths are written to 2 decimals; measuring a pivot raises that for a moment (see pivot()).
+  let digits = 2;
+  const fmt = (n) => String(+n.toFixed(digits)); // +"…" drops trailing zeros and "-0"
   const r2 = (n) => +n.toFixed(2);
   const dist = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
   const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
@@ -129,27 +131,87 @@
   const MIRRORS = { none: [], h: [[-1, 1]], v: [[1, -1]], both: [[-1, 1], [1, -1], [-1, -1]] };
   // Rewrites every coordinate pair of one of our own paths (absolute M/L/C/Z, single spaces).
   const mapPath = (d, f) => d.replace(/(-?[\d.]+) (-?[\d.]+)/g, (_, x, y) => { const p = f(+x, +y); return fmt(p.x) + ' ' + fmt(p.y); });
-  // Centroid of each FIXED path in its own 0-100 frame: the point its rot is drawn around.
+  // Centroid of each FIXED path in its own 0-100 frame: the point its ang is drawn around.
   const FIXED_C = Object.fromEntries(Object.entries(FIXED).map(([k, d]) => [k, ringCentroid(flatten(d))]));
-  function shapePath(sh) {
+  // A shape is a normal shape (its points, or a FIXED path at scale a, angle ang and offset x, y), optionally
+  // followed by a stretch st = [sxx, sxy, syy, cx, cy]: a symmetric matrix with determinant 1 applied around
+  // (cx, cy). Only that relative stretch is kept; any uniform scale, rotation or move goes into the normal
+  // shape (see applyWorld), so stretching x2 one way and then x2 the other leaves no stretch at all.
+  const toWorld = (sh, p) => {
+    if (!sh.st) return p;
+    const [a, b, d, cx, cy] = sh.st, x = p.x - cx, y = p.y - cy;
+    return { x: cx + a * x + b * y, y: cy + b * x + d * y };
+  };
+  const toBase = (sh, p) => {
+    if (!sh.st) return p;
+    const [a, b, d, cx, cy] = sh.st, det = a * d - b * b, x = p.x - cx, y = p.y - cy;
+    return { x: cx + (d * x - b * y) / det, y: cy + (a * y - b * x) / det };
+  };
+  function basePath(sh) {
     if (!sh.fixed) return buildPath(sh.pts);
-    if (!sh.rot) return mapPath(FIXED[sh.fixed], (x, y) => ({ x: x * sh.a + sh.x, y: y * sh.a + sh.y })); // exact, unturned
-    const c = FIXED_C[sh.fixed], t = (sh.rot || 0) * Math.PI / 180, cos = Math.cos(t), sin = Math.sin(t);
+    if (!sh.ang) return mapPath(FIXED[sh.fixed], (x, y) => ({ x: x * sh.a + sh.x, y: y * sh.a + sh.y })); // exact, unturned
+    const c = FIXED_C[sh.fixed], t = sh.ang * Math.PI / 180, cos = Math.cos(t), sin = Math.sin(t);
     const ox = c.x * sh.a + sh.x, oy = c.y * sh.a + sh.y;
     return mapPath(FIXED[sh.fixed], (x, y) => {
       const dx = (x - c.x) * sh.a, dy = (y - c.y) * sh.a;
       return { x: ox + dx * cos - dy * sin, y: oy + dx * sin + dy * cos };
     });
   }
+  // Curves are Béziers, which a stretch maps exactly: the same as stretching the drawn image.
+  const shapePath = (sh) => (sh.st ? mapPath(basePath(sh), (x, y) => toWorld(sh, { x, y })) : basePath(sh));
   // A shape's own outline followed by its mirrored copies.
   const copies = (sh) => {
     const d = shapePath(sh);
     return [d, ...MIRRORS[sh.mirror].map(([sx, sy]) => mapPath(d, (x, y) => ({ x: sx < 0 ? 100 - x : x, y: sy < 0 ? 100 - y : y })))];
   };
+  // Applies w -> A w + t to the shape as drawn, A = [a, b, c, d] (row by row, positive determinant). A times the
+  // current stretch splits into rotation U, uniform scale k and a new stretch of determinant 1 (polar
+  // decomposition); U and k go into the normal shape, where they're exact (corner sizes scale with k), and the
+  // stretch is kept on its own. Nothing is rounded beyond 1e-6, so undoing a stretch by hand lands back exactly.
+  const r6 = (n) => Math.round(n * 1e6) / 1e6;
+  function applyWorld(sh, A, tx, ty) {
+    const [a, b, d, cx, cy] = sh.st || [1, 0, 1, 0, 0];
+    const m = [A[0] * a + A[1] * b, A[0] * b + A[1] * d, A[2] * a + A[3] * b, A[2] * b + A[3] * d];
+    const th = Math.atan2(m[2] - m[1], m[0] + m[3]), cs = Math.cos(th), sn = Math.sin(th);
+    const k = Math.sqrt(m[0] * m[3] - m[1] * m[2]);
+    // P = U^T m / k is the new stretch in the shape's own turn; U P U^T puts it back in canvas directions.
+    const p0 = (cs * m[0] + sn * m[2]) / k, p1 = (cs * m[1] + sn * m[3]) / k, p3 = (-sn * m[1] + cs * m[3]) / k;
+    const sxx = cs * cs * p0 - 2 * cs * sn * p1 + sn * sn * p3, syy = sn * sn * p0 + 2 * cs * sn * p1 + cs * cs * p3;
+    const sxy = cs * sn * (p0 - p3) + (cs * cs - sn * sn) * p1;
+    const nx = A[0] * cx + A[1] * cy + tx, ny = A[2] * cx + A[3] * cy + ty;
+    const T = (x, y) => ({ x: nx + k * (cs * (x - cx) - sn * (y - cy)), y: ny + k * (sn * (x - cx) + cs * (y - cy)) });
+    // Back within 1e-4 of no stretch (say, an edge dragged back onto its grid line): no stretch.
+    const none = Math.abs(sxx - 1) < 1e-4 && Math.abs(syy - 1) < 1e-4 && Math.abs(sxy) < 1e-4;
+    const out = { ...sh };
+    if (none) delete out.st; else out.st = [sxx, sxy, syy, nx, ny];
+    if (sh.fixed) {
+      const f = FIXED_C[sh.fixed], o = T(f.x * sh.a + sh.x, f.y * sh.a + sh.y), na = sh.a * k;
+      return Object.assign(out, { a: r6(na), ang: r6(((((sh.ang || 0) + th * 180 / Math.PI) % 360) + 360) % 360), x: r6(o.x - f.x * na), y: r6(o.y - f.y * na) });
+    }
+    out.pts = sh.pts.map((p) => { const q = T(p.x, p.y); return { x: r6(q.x), y: r6(q.y), r: r6(p.r * k), s: p.s }; });
+    return out;
+  }
   // p -> (p - c) * k + t, for both kinds of shape (corner sizes scale too, so the look is kept).
-  function transform(sh, k, cx, cy, tx, ty) {
-    if (sh.fixed) return { ...sh, a: r2(sh.a * k), x: r2((sh.x - cx) * k + tx), y: r2((sh.y - cy) * k + ty) };
-    return { ...sh, pts: sh.pts.map((p) => ({ x: r2((p.x - cx) * k + tx), y: r2((p.y - cy) * k + ty), r: r2(p.r * k), s: p.s })) };
+  const transform = (sh, k, cx, cy, tx, ty) => applyWorld(sh, [k, 0, 0, k], tx - k * cx, ty - k * cy);
+  // Stretches by k along one canvas axis ('x' or 'y'), keeping the line at `at` on that axis in place.
+  const stretched = (sh, axis, k, at) => (axis === 'x' ? applyWorld(sh, [k, 0, 0, 1], at - k * at, 0) : applyWorld(sh, [1, 0, 0, k], 0, at - k * at));
+  // The stretch as drawn: the unit direction of its long side and how many times longer that side is
+  // than the short one. null without a stretch.
+  // Two arrows pointing away from each other along the long side, starting r0 from the centre; the
+  // stronger the stretch, the longer they get.
+  function stretchArrows(info, r0) {
+    if (!info) return '';
+    const { ux, uy } = info, len = Math.min(16, 2 + 4 * Math.log2(info.ratio)), f = (n) => +n.toFixed(3);
+    return [1, -1].map((s) => {
+      const ax = s * ux * r0, ay = s * uy * r0, bx = s * ux * (r0 + len), by = s * uy * (r0 + len);
+      const hx = -s * ux * 1.8, hy = -s * uy * 1.8, px = -uy * 1.3, py = ux * 1.3;
+      return `M${f(ax)} ${f(ay)}L${f(bx)} ${f(by)}M${f(bx + hx + px)} ${f(by + hy + py)}L${f(bx)} ${f(by)}L${f(bx + hx - px)} ${f(by + hy - py)}`;
+    }).join('');
+  }
+  function stretchInfo(sh) {
+    if (!sh.st) return null;
+    const [a, b, d] = sh.st, l1 = (a + d) / 2 + Math.hypot((a - d) / 2, b), th = Math.atan2(2 * b, a - d) / 2;
+    return { ux: Math.cos(th), uy: Math.sin(th), ratio: (l1 * l1) / (a * d - b * b) };
   }
   // Scales the given shapes, mirrored copies included, until they touch the box. An axis with mirrored
   // copies is symmetric around the canvas centre, so it may only scale around 50, never shift.
@@ -204,23 +266,22 @@
   // The point a shape rotates and centres around, as picked in the Move pill: the middle of its box, or its
   // centre of mass. Only the box one moves as the shape turns.
   let pivotMode = 'box';
+  // Measured from the outline at 6 decimals: at 2, turning a shape and turning it back would pivot around
+  // two slightly different points and not land exactly where it started.
   const pivot = (sh) => {
-    if (pivotMode === 'mass') return centroid(sh);
-    const b = measure(shapePath(sh));
-    return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+    digits = 6;
+    try {
+      if (pivotMode === 'mass') return centroid(sh);
+      const b = measure(shapePath(sh));
+      return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+    } finally { digits = 2; }
   };
-  // Turns a shape by deg (clockwise) around its pivot. rot keeps the running total for the pill;
-  // FIXED shapes are drawn from it (around their own centroid, then shifted so the pivot stays put),
-  // point shapes get their points turned.
+  // Turns a shape by deg (clockwise) around its pivot; a stretch turns with it. rot only keeps the running
+  // total for the rotation pill.
   function rotated(sh, deg) {
     const rot = r2((((sh.rot || 0) + deg) % 360 + 360) % 360) % 360;
     const c = pivot(sh), t = deg * Math.PI / 180, cos = Math.cos(t), sin = Math.sin(t);
-    const turn = (x, y) => ({ x: c.x + (x - c.x) * cos - (y - c.y) * sin, y: c.y + (x - c.x) * sin + (y - c.y) * cos });
-    if (sh.fixed) {
-      const f = FIXED_C[sh.fixed], wx = f.x * sh.a + sh.x, wy = f.y * sh.a + sh.y, w = turn(wx, wy);
-      return { ...sh, rot, x: r2(sh.x + w.x - wx), y: r2(sh.y + w.y - wy) };
-    }
-    return { ...sh, rot, pts: sh.pts.map((p) => { const q = turn(p.x, p.y); return { ...p, x: r2(q.x), y: r2(q.y) }; }) };
+    return { ...applyWorld(sh, [cos, -sin, sin, cos], c.x - cos * c.x + sin * c.y, c.y - sin * c.x - cos * c.y), rot };
   }
   // Ramer–Douglas–Peucker: drops points closer than tol to the line between their neighbours.
   function simplify(pts, tol) {
@@ -277,13 +338,24 @@
   function cleanShape(s) {
     const mirror = Object.hasOwn(MIRRORS, s?.mirror) ? s.mirror : 'none', rot = r2((((+(s?.rot ?? 0)) % 360) + 360) % 360) % 360;
     if (!Number.isFinite(rot)) return null;
+    // The stretch: a symmetric matrix brought back to determinant 1, and its centre.
+    let st;
+    if (s?.st !== undefined) {
+      const [a, b, d, cx, cy] = Array.isArray(s.st) ? s.st.map(Number) : [], det = a * d - b * b;
+      if (!(a > 0 && det > 1e-6 && Math.abs(b) < 1e3 && a < 1e3 && Math.abs(cx) < 1e3 && Math.abs(cy) < 1e3)) return null;
+      const k = Math.sqrt(det);
+      st = [a / k, b / k, d / k, cx, cy];
+    }
+    const extra = st ? { st } : {};
     if (typeof s?.fixed === 'string' && Object.hasOwn(FIXED, s.fixed)) {
-      const sh = { fixed: s.fixed, a: clamp(+(s.a ?? 1), 0.01, 20), x: clamp(+(s.x ?? 0), -1000, 1000), y: clamp(+(s.y ?? 0), -1000, 1000), mirror, rot };
-      return [sh.a, sh.x, sh.y].every(Number.isFinite) ? sh : null;
+      // Saves from before stretching drew the head at its pill angle (rot); now that's ang.
+      const ang = ((+(s.ang ?? s.rot ?? 0) % 360) + 360) % 360;
+      const sh = { fixed: s.fixed, a: clamp(+(s.a ?? 1), 0.01, 20), x: clamp(+(s.x ?? 0), -1000, 1000), y: clamp(+(s.y ?? 0), -1000, 1000), ang, mirror, rot, ...extra };
+      return [sh.a, sh.x, sh.y, sh.ang].every(Number.isFinite) ? sh : null;
     }
     if (!Array.isArray(s?.pts) || s.pts.length < 3 || s.pts.length > 200) return null;
     const p = s.pts.map((q) => ({ x: clamp(+q?.x, -500, 600), y: clamp(+q?.y, -500, 600), r: clamp(+q?.r, 0, 500), s: clamp(+q?.s, 0, 1) }));
-    return p.every((q) => [q.x, q.y, q.r, q.s].every(Number.isFinite)) ? { pts: p, mirror, rot } : null;
+    return p.every((q) => [q.x, q.y, q.r, q.s].every(Number.isFinite)) ? { pts: p, mirror, rot, ...extra } : null;
   }
   function restore(o) {
     // Saves and links from before multiple shapes held one shape: { pts } or { pts, fixed }.
@@ -372,12 +444,22 @@
 
   let activeBox = null; // bounding box of the selected shape's own outline, for Move mode
   const boxCorners = (b) => [{ x: b.x, y: b.y }, { x: b.x + b.width, y: b.y }, { x: b.x + b.width, y: b.y + b.height }, { x: b.x, y: b.y + b.height }];
+  // Move mode's 8 handles: the corners (top left, clockwise), then the middle of each side (top, right,
+  // bottom, left). Corners resize keeping the proportions, sides stretch; each pulls against its opposite.
+  const boxHandles = (b) => [...boxCorners(b), { x: b.x + b.width / 2, y: b.y }, { x: b.x + b.width, y: b.y + b.height / 2 },
+    { x: b.x + b.width / 2, y: b.y + b.height }, { x: b.x, y: b.y + b.height / 2 }];
+  const opposite = (i) => (i < 4 ? (i + 2) % 4 : 4 + (i - 2) % 4);
+  const sideAxis = (i) => (i === 5 || i === 7 ? 'x' : 'y'); // the axis a side handle stretches
+  // Where the selected shape's points are on the canvas (they're stored before its stretch), and back.
+  const wpt = (p) => toWorld(shapes[active], p);
+  const bpt = (p) => toBase(shapes[active], p);
+  const setPoint = (i, w) => { const q = bpt(w); pts[i].x = r6(q.x); pts[i].y = r6(q.y); };
 
   function render() {
     const lines = shapes.map(copies); // per shape: own outline, then its mirrored copies
     if (!drag) {
       const bb = measure(lines.flat().join(' '));
-      const xy = [bb.x, bb.y, bb.x + bb.width, bb.y + bb.height, ...(pts ? pts.flatMap((p) => [p.x, p.y]) : [])];
+      const xy = [bb.x, bb.y, bb.x + bb.width, bb.y + bb.height, ...(pts ? pts.map(wpt).flatMap((p) => [p.x, p.y]) : [])];
       const lo = Math.floor(Math.min(-20, ...xy) - 6), hi = Math.ceil(Math.max(120, ...xy) + 6);
       if (lo !== view.lo || hi !== view.hi) {
         Object.assign(view, { lo, hi });
@@ -396,7 +478,7 @@
     const layer = $('se-lines');
     resize(layer, strokes.length, () => el('path', {}));
     strokes.forEach((s, k) => { layer.children[k].setAttribute('d', s.d); layer.children[k].setAttribute('class', s.cls); });
-    $('se-outline').setAttribute('points', pts && mode === 'edit' ? pts.map((p) => p.x + ',' + p.y).join(' ') : '');
+    $('se-outline').setAttribute('points', pts && mode === 'edit' ? pts.map(wpt).map((p) => p.x + ',' + p.y).join(' ') : '');
 
     // Neighbours whose rounding the selected corner is currently eating into.
     const squeezed = new Set();
@@ -405,7 +487,7 @@
       for (const j of neighbours(sel)) if (now[j] < alone[j] - 0.01) squeezed.add(j);
     }
 
-    const handles = $('se-handles'), adders = $('se-adders'), shown = pts && mode === 'edit' ? pts : [];
+    const handles = $('se-handles'), adders = $('se-adders'), shown = pts && mode === 'edit' ? pts.map(wpt) : [];
     const focused = document.activeElement?.dataset?.i !== undefined;
     resize(adders, shown.length, () => {
       const g = el('g', { class: 'se-add' }), t = el('title', {});
@@ -419,7 +501,7 @@
       return g;
     });
     shown.forEach((p, i) => {
-      const q = pts[(i + 1) % pts.length], m = lerp(p, q, 0.5), a = adders.children[i], h = handles.children[i];
+      const q = shown[(i + 1) % shown.length], m = lerp(p, q, 0.5), a = adders.children[i], h = handles.children[i];
       a.dataset.add = i;
       a.style.display = !drag && dist(p, q) > 10 ? '' : 'none'; // grabAt() uses the same rule
       for (const c of a.querySelectorAll('circle')) { c.setAttribute('cx', m.x); c.setAttribute('cy', m.y); }
@@ -438,16 +520,28 @@
       activeBox = measure(lines[active][0]);
       const r = $('se-move-box'), b = activeBox;
       r.setAttribute('x', b.x); r.setAttribute('y', b.y); r.setAttribute('width', b.width); r.setAttribute('height', b.height);
-      boxCorners(b).forEach((c, i) => {
+      boxHandles(b).forEach((c, i) => {
         const h = $('se-move').querySelectorAll('.se-resize')[i];
-        h.setAttribute('x', c.x - 2); h.setAttribute('y', c.y - 2);
+        h.setAttribute('x', c.x - h.getAttribute('width') / 2); h.setAttribute('y', c.y - h.getAttribute('height') / 2);
         h.classList.toggle('selected', i === pickedCorner);
       });
     }
     $('se-fit-tools').hidden = $('se-mirror').hidden = !moving;
+    $('se-unstretch').hidden = !shapes[active].st;
     for (const b of $('se-mirror').querySelectorAll('[data-mirror]')) b.setAttribute('aria-pressed', b.dataset.mirror === shapes[active].mirror);
     for (const b of $('se-mirror').querySelectorAll('[data-pivot]')) b.setAttribute('aria-pressed', b.dataset.pivot === pivotMode);
     if (moving) { const c = pivot(shapes[active]); $('se-pivot-mark').setAttribute('transform', `translate(${c.x} ${c.y})`); }
+    // The stretch marks: in Move mode on the pivot cross, past the end of its arms; in Edit mode from the
+    // middle of the box, around a dot.
+    const info = stretchInfo(shapes[active]);
+    $('se-stretch-arrows').setAttribute('d', moving ? stretchArrows(info, 4) : '');
+    const editMark = !moving && info && pts;
+    $('se-stretch-mark').style.display = editMark ? '' : 'none';
+    if (editMark) {
+      const b = measure(lines[active][0]);
+      $('se-stretch-mark').setAttribute('transform', `translate(${b.x + b.width / 2} ${b.y + b.height / 2})`);
+      $('se-stretch-mark').querySelector('path').setAttribute('d', stretchArrows(info, 1.6));
+    }
 
     renderCards();
 
@@ -455,7 +549,7 @@
     const editable = !!pts;
     $('se-corner-set').disabled = !editable;
     // Top-left pill: the selected point (Edit mode) or the selected corner (Move mode).
-    const at = moving ? (pickedCorner >= 0 && activeBox ? boxCorners(activeBox)[pickedCorner] : null) : (pts && sel >= 0 ? pts[sel] : null);
+    const at = moving ? (pickedCorner >= 0 && activeBox ? boxHandles(activeBox)[pickedCorner] : null) : (pts && sel >= 0 ? wpt(pts[sel]) : null);
     $('se-point-pill').hidden = !at;
     // In its place, with no corner selected in Move mode: the shape's rotation.
     $('se-rot-pill').hidden = !moving || !!at;
@@ -467,7 +561,10 @@
     }
     if (at) {
       $('se-x').value = fmt(at.x); $('se-y').value = fmt(at.y);
-      $('se-point-pill').setAttribute('aria-label', moving ? 'Corner' : `Point ${sel + 1}`);
+      $('se-point-pill').setAttribute('aria-label', moving ? (pickedCorner < 4 ? 'Corner' : 'Side') : `Point ${sel + 1}`);
+      // A side handle only has the one coordinate it stretches.
+      $('se-x').parentElement.hidden = moving && pickedCorner >= 4 && sideAxis(pickedCorner) !== 'x';
+      $('se-y').parentElement.hidden = moving && pickedCorner >= 4 && sideAxis(pickedCorner) !== 'y';
       $('se-remove').hidden = moving;
       $('se-remove').disabled = moving || pts.length <= 3;
     }
@@ -566,13 +663,14 @@
     let best = null, bestD = reach;
     if (mode === 'move') {
       if (!activeBox) return null;
-      boxCorners(activeBox).forEach((c, i) => { const d = dist(at, c); if (d < bestD) { best = { resize: i }; bestD = d; } });
+      boxHandles(activeBox).forEach((c, i) => { const d = dist(at, c); if (d < bestD) { best = { resize: i }; bestD = d; } });
       const b = activeBox;
       return best || (at.x >= b.x && at.x <= b.x + b.width && at.y >= b.y && at.y <= b.y + b.height ? { move: true } : null);
     }
     if (!pts) return null;
-    pts.forEach((q, i) => {
-      const next = pts[(i + 1) % pts.length], dq = dist(at, q);
+    const wp = pts.map(wpt);
+    wp.forEach((q, i) => {
+      const next = wp[(i + 1) % wp.length], dq = dist(at, q);
       if (dq < bestD) { best = { point: i }; bestD = dq; }
       // A "+" only exists on edges longer than 10 units, and counts as a bit further than it is so a
       // point next to it still wins.
@@ -619,17 +717,23 @@
     const at = toSvg(e);
     if (g.point !== undefined || g.add !== undefined) {
       if (g.add !== undefined) {
-        const a = pts[g.add], m = lerp(a, pts[(g.add + 1) % pts.length], 0.5);
-        pts.splice(g.add + 1, 0, { x: snap(m.x), y: snap(m.y), r: a.r, s: a.s });
+        const a = pts[g.add], m = lerp(wpt(a), wpt(pts[(g.add + 1) % pts.length]), 0.5);
+        pts.splice(g.add + 1, 0, { x: 0, y: 0, r: a.r, s: a.s });
+        setPoint(g.add + 1, { x: snap(m.x), y: snap(m.y) });
         sel = g.add + 1;
       } else sel = g.point;
-      drag = { kind: 'point', dx: pts[sel].x - at.x, dy: pts[sel].y - at.y }; // the point keeps its distance from the finger
+      const w = wpt(pts[sel]);
+      drag = { kind: 'point', dx: w.x - at.x, dy: w.y - at.y }; // the point keeps its distance from the finger
     } else if (g.move) {
       drag = { kind: 'move', from: at, orig: shapes[active] };
     } else {
-      const c = boxCorners(activeBox), anchor = c[(g.resize + 2) % 4];
-      drag = { kind: 'resize', anchor, d0: dist(anchor, c[g.resize]), orig: shapes[active] };
-      pickedCorner = g.resize; // a tap selects the corner; a drag resizes too
+      const c = boxHandles(activeBox), anchor = c[opposite(g.resize)];
+      if (g.resize < 4) drag = { kind: 'resize', anchor, d0: dist(anchor, c[g.resize]), orig: shapes[active] };
+      else {
+        const axis = sideAxis(g.resize);
+        drag = { kind: 'stretch', axis, at: anchor[axis], d0: c[g.resize][axis] - anchor[axis], from: at[axis], orig: shapes[active] };
+      }
+      pickedCorner = g.resize; // a tap selects the handle; a drag resizes too
     }
     svg.setPointerCapture(e.pointerId);
     e.preventDefault(); // this also stops the browser focusing the canvas, so do it here:
@@ -640,8 +744,13 @@
     if (!drag) return;
     const p = toSvg(e);
     if (drag.kind === 'point') {
-      pts[sel].x = snap(p.x + drag.dx);
-      pts[sel].y = snap(p.y + drag.dy);
+      setPoint(sel, { x: snap(p.x + drag.dx), y: snap(p.y + drag.dy) });
+    } else if (drag.kind === 'stretch') {
+      // The side moves by whole grid steps when snapping (like a moved shape), so dragging it back to where
+      // it started gives exactly the shape it started as.
+      const moved = p[drag.axis] - drag.from, k = Math.max(0.05, 1 + (grid.snap ? Math.round(moved / grid.step) * grid.step : moved) / drag.d0);
+      shapes[active] = stretched(drag.orig, drag.axis, k, drag.at);
+      sync();
     } else if (drag.kind === 'move') {
       const step = (v) => (grid.snap ? Math.round(v / grid.step) * grid.step : v);
       shapes[active] = transform(drag.orig, 1, 0, 0, step(p.x - drag.from.x), step(p.y - drag.from.y));
@@ -693,8 +802,8 @@
     } else if (sel < 0) return;
     else if (mv) {
       checkpoint();
-      pts[sel].x = snap(pts[sel].x + mv[0] * step);
-      pts[sel].y = snap(pts[sel].y + mv[1] * step);
+      const w = wpt(pts[sel]);
+      setPoint(sel, { x: snap(w.x + mv[0] * step), y: snap(w.y + mv[1] * step) });
     } else if (e.key === 'Delete' || e.key === 'Backspace') {
       if (pts.length <= 3) return shake();
       checkpoint();
@@ -726,6 +835,16 @@
     const tx = h ? (c.x <= 50 ? 25 : 75) : 50, ty = v ? (c.y <= 50 ? 25 : 75) : 50;
     checkpoint();
     shapes[active] = transform(sh, 1, c.x, c.y, tx, ty);
+    sync(); render();
+  };
+  // Shrinks the shape along the long side of its stretch until there's none left, around the pivot.
+  $('se-unstretch').onclick = () => {
+    const sh = shapes[active], info = stretchInfo(sh);
+    if (!info) return;
+    const c = pivot(sh), f = 1 / info.ratio - 1, { ux, uy } = info;
+    const A = [1 + f * ux * ux, f * ux * uy, f * ux * uy, 1 + f * uy * uy];
+    checkpoint();
+    shapes[active] = applyWorld(sh, A, c.x - A[0] * c.x - A[1] * c.y, c.y - A[2] * c.x - A[3] * c.y);
     sync(); render();
   };
   $('se-mirror').addEventListener('click', (e) => {
@@ -762,15 +881,16 @@
       const v = clamp(+e.target.value, view.lo, view.hi);
       if (e.target.value === '' || !Number.isFinite(v)) return render(); // puts the current value back
       if (mode === 'move' && pickedCorner >= 0 && activeBox) {
-        // A corner moves with the opposite one fixed and the proportions kept, so the other coordinate follows.
-        const c = boxCorners(activeBox), a = c[(pickedCorner + 2) % 4], k0 = (v - a[k]) / (c[pickedCorner][k] - a[k]);
+        // A corner moves with the opposite one fixed and the proportions kept, so the other coordinate follows;
+        // a side moves with the opposite side fixed, stretching the shape.
+        const c = boxHandles(activeBox), a = c[opposite(pickedCorner)], k0 = (v - a[k]) / (c[pickedCorner][k] - a[k]);
         if (!(k0 > 0.05)) return render(); // not past the opposite corner, nor down to nothing
         checkpoint();
-        shapes[active] = transform(shapes[active], k0, a.x, a.y, a.x, a.y);
+        shapes[active] = pickedCorner < 4 ? transform(shapes[active], k0, a.x, a.y, a.x, a.y) : stretched(shapes[active], k, k0, a[k]);
         sync();
       } else if (pts && sel >= 0) {
         checkpoint();
-        pts[sel][k] = v;
+        setPoint(sel, { ...wpt(pts[sel]), [k]: v });
       } else return;
       render();
     })

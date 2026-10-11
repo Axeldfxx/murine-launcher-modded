@@ -145,9 +145,9 @@ noindex: true    # and out of search engines
 .se-mirror button[aria-pressed="true"] { background: var(--md-primary-container); color: var(--md-on-primary-container); }
 .se-mirror svg { width: 20px; height: 20px; }
 .se-pivot { display: flex; gap: 2px; padding-left: 5px; margin-left: 3px; border-left: 1px solid var(--md-outline-variant); }
-.se-pivot-mark { pointer-events: none; fill: none; stroke: var(--md-primary); stroke-width: .6; stroke-linecap: round; }
+.se-pivot-mark { pointer-events: none; fill: none; stroke: var(--md-primary); stroke-width: .6; stroke-linecap: round; stroke-linejoin: round; }
 .se-stage-btn:hover, .se-mirror button:hover { background: var(--md-surface-container-high); }
-.se-stage-tools[hidden], .se-mirror[hidden] { display: none; }
+.se-stage-tools[hidden], .se-mirror[hidden], .se-stage-btn[hidden] { display: none; }
 .se-stage-btn svg { width: 22px; height: 22px; }
 /* Shape cards under the canvas. */
 .se-cards { display: flex; gap: 10px; overflow-x: auto; padding: 12px 2px 6px; }
@@ -197,6 +197,7 @@ noindex: true    # and out of search engines
         <rect class="se-bounds" x="0" y="0" width="100" height="100"/>
         <g id="se-lines"></g>
         <polygon id="se-outline" class="se-outline"/>
+        <g id="se-stretch-mark" class="se-pivot-mark" style="display: none"><circle r=".8" fill="var(--md-primary)" stroke="none"/><path/></g>
         <g id="se-adders"></g>
         <g id="se-handles"></g>
         <g id="se-move" style="display: none">
@@ -206,13 +207,19 @@ noindex: true    # and out of search engines
           <rect class="se-resize" width="4" height="4" style="cursor: nesw-resize"/>
           <rect class="se-resize" width="4" height="4" style="cursor: nwse-resize"/>
           <rect class="se-resize" width="4" height="4" style="cursor: nesw-resize"/>
-          <g id="se-pivot-mark" class="se-pivot-mark"><circle r="1.8"/><path d="M0 -4V-2.2M0 2.2V4M-4 0H-2.2M2.2 0H4"/><circle r=".5" fill="var(--md-primary)" stroke="none"/></g>
+          <!-- sides, in the same order: top, right, bottom, left -->
+          <rect class="se-resize" width="6" height="2.2" rx="1.1" style="cursor: ns-resize"/>
+          <rect class="se-resize" width="2.2" height="6" rx="1.1" style="cursor: ew-resize"/>
+          <rect class="se-resize" width="6" height="2.2" rx="1.1" style="cursor: ns-resize"/>
+          <rect class="se-resize" width="2.2" height="6" rx="1.1" style="cursor: ew-resize"/>
+          <g id="se-pivot-mark" class="se-pivot-mark"><circle r="1.8"/><path d="M0 -4V-2.2M0 2.2V4M-4 0H-2.2M2.2 0H4"/><circle r=".5" fill="var(--md-primary)" stroke="none"/><path id="se-stretch-arrows"/></g>
         </g>
       </svg>
       <div id="se-fit-tools" class="se-stage-tools" hidden>
         <button id="se-fit-shape" class="se-stage-btn" type="button" title="Fit this shape to the box" aria-label="Fit this shape to the box"><span class="material-symbols-outlined" aria-hidden="true">&#xea10;</span></button>
         <button id="se-fit-quarter" class="se-stage-btn" type="button" title="Fit this shape into the top-left quarter" aria-label="Fit this shape into the top-left quarter"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="3 2"/><rect x="5.5" y="5.5" width="6.5" height="6.5" rx="1.5" fill="currentColor"/></svg></button>
         <button id="se-center" class="se-stage-btn" type="button" title="Centre this shape" aria-label="Centre this shape"><span class="material-symbols-outlined" aria-hidden="true">&#xe3dc;</span></button>
+        <button id="se-unstretch" class="se-stage-btn" type="button" title="Remove the stretch (shrinks the long side)" aria-label="Remove the stretch" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18" stroke-dasharray="2.5 2.5"/><path d="M3 12h6M6.5 9.5 9 12l-2.5 2.5M21 12h-6M17.5 9.5 15 12l2.5 2.5"/></svg></button>
       </div>
       <div id="se-mirror" class="se-mirror" role="group" aria-label="Mirror" hidden>
         <button type="button" data-mirror="none" title="No mirroring" aria-label="No mirroring"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M6 4l6 6-6 6z"/></svg></button>
