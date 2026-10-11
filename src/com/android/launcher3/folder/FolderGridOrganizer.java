@@ -16,7 +16,6 @@
 
 package com.android.launcher3.folder;
 
-import static com.android.launcher3.folder.ClippedFolderIconLayoutRule.MAX_NUM_ITEMS_IN_PREVIEW;
 
 import android.graphics.Point;
 import android.util.Log;
@@ -42,8 +41,17 @@ public class FolderGridOrganizer {
     private int mCountX;
     private int mCountY;
     private boolean mDisplayingUpperLeftQuadrant = false;
-    private static final int PREVIEW_MAX_ROWS = 3;
-    private static final int PREVIEW_MAX_COLUMNS = 3;
+    // Normal folders preview 4 items (2x2); super folders preview 9 (3x3).
+    private int mMaxPreviewItems = 4;
+    private int mPreviewRows = 2;
+    private int mPreviewColumns = 2;
+
+    /** Switches between the normal 2x2 preview and the super folder 3x3 preview. */
+    public void setLargePreview(boolean large) {
+        mMaxPreviewItems = large ? 9 : 4;
+        mPreviewRows = large ? 3 : 2;
+        mPreviewColumns = large ? 3 : 2;
+    }
 
     /**
      * Note: must call {@link #setFolderInfo(FolderInfo)} manually for verifier to work.
@@ -75,7 +83,7 @@ public class FolderGridOrganizer {
         if (contentSize != mNumItemsInFolder) {
             calculateGridSize(contentSize);
 
-            mDisplayingUpperLeftQuadrant = contentSize > MAX_NUM_ITEMS_IN_PREVIEW;
+            mDisplayingUpperLeftQuadrant = contentSize > mMaxPreviewItems;
             mNumItemsInFolder = contentSize;
         }
         return this;
@@ -175,7 +183,7 @@ public class FolderGridOrganizer {
                 result.add((R) contents.get(i));
             }
 
-            if (result.size() == MAX_NUM_ITEMS_IN_PREVIEW) {
+            if (result.size() == mMaxPreviewItems) {
                 break;
             }
         }
@@ -208,9 +216,9 @@ public class FolderGridOrganizer {
         if (page > 0 || mDisplayingUpperLeftQuadrant) {
             int col = rank % mCountX;
             int row = rank / mCountX;
-            return col < PREVIEW_MAX_COLUMNS && row < PREVIEW_MAX_ROWS;
+            return col < mPreviewColumns && row < mPreviewRows;
         }
         // If we have less than 4 items do this
-        return rank < MAX_NUM_ITEMS_IN_PREVIEW;
+        return rank < mMaxPreviewItems;
     }
 }

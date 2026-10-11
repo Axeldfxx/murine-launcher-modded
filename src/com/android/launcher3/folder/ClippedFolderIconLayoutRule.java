@@ -4,16 +4,22 @@ import com.android.launcher3.Flags;
 
 public class ClippedFolderIconLayoutRule {
 
-    /** Up to 9 icons are shown in the folder preview, as a 3x3 grid (ColorOS-style). */
-    public static final int MAX_NUM_ITEMS_IN_PREVIEW = 9;
-    /** Folders with up to this many items keep the original circular 2x2 layout. */
-    private static final int MAX_CIRCULAR_ITEMS = 4;
+    public static final int MAX_NUM_ITEMS_IN_PREVIEW = 4;
+    /** Preview capacity of a super folder (2x2 cells, 3x3 icons). */
+    public static final int MAX_NUM_ITEMS_IN_LARGE_PREVIEW = 9;
     private static final int MIN_NUM_ITEMS_IN_PREVIEW = 2;
 
-    // 3x3 preview: icon size and spacing as a fraction of the preview area.
-    private static final float GRID3_SCALE = 0.29f;
-    private static final float GRID3_STEP = 0.335f;
-    private static final float GRID3_START = 0.02f;
+    // Super folder preview: icon size and spacing as a fraction of the preview area.
+    private static final float LARGE_SCALE = 0.245f;
+    private static final float LARGE_STEP = 0.30f;
+    private static final float LARGE_START = 0.0775f;
+
+    private boolean mLarge = false;
+
+    /** true for super folders: always a 3x3 grid of big icons. */
+    public void setLarge(boolean large) {
+        mLarge = large;
+    }
 
     private static final float MIN_SCALE = 0.44f;
     private static final float MAX_SCALE = 0.51f;
@@ -49,8 +55,9 @@ public class ClippedFolderIconLayoutRule {
         float totalScale = scaleForItem(curNumItems);
         float transX;
         float transY;
-        boolean grid3 = curNumItems > MAX_CIRCULAR_ITEMS;
-        int visibleLimit = grid3 ? MAX_NUM_ITEMS_IN_PREVIEW : MAX_CIRCULAR_ITEMS;
+        boolean grid3 = mLarge;
+        int visibleLimit = grid3
+                ? MAX_NUM_ITEMS_IN_LARGE_PREVIEW : MAX_NUM_ITEMS_IN_PREVIEW;
 
         if (index == EXIT_INDEX) {
             // 0 1 * <-- Exit position (row 0, col 2)
@@ -134,8 +141,8 @@ public class ClippedFolderIconLayoutRule {
         if (mIsRtl) {
             col = 2 - col;
         }
-        result[0] = mAvailableSpace * (GRID3_START + col * GRID3_STEP);
-        result[1] = mAvailableSpace * (GRID3_START + row * GRID3_STEP);
+        result[0] = mAvailableSpace * (LARGE_START + col * LARGE_STEP);
+        result[1] = mAvailableSpace * (LARGE_START + row * LARGE_STEP);
     }
 
     // b/392610664 TODO: Change positioning from circular geometry to square / grid-based.
@@ -171,7 +178,7 @@ public class ClippedFolderIconLayoutRule {
         float radiusDilation = Flags.enableLauncherIconShapes() ? MAX_RADIUS_DILATION_SHAPES
                 : MAX_RADIUS_DILATION;
         float radius = mRadius * (1 + radiusDilation * (curNumItems - MIN_NUM_ITEMS_IN_PREVIEW)
-                / (MAX_CIRCULAR_ITEMS - MIN_NUM_ITEMS_IN_PREVIEW));
+                / (MAX_NUM_ITEMS_IN_PREVIEW - MIN_NUM_ITEMS_IN_PREVIEW));
         double theta = theta0 + index * (2 * Math.PI / curNumItems) * direction;
 
         float halfIconSize = (mIconSize * scaleForItem(curNumItems)) / 2;
@@ -186,8 +193,8 @@ public class ClippedFolderIconLayoutRule {
 
     public float scaleForItem(int numItems) {
         // Scale is determined by the number of items in the preview.
-        if (numItems > MAX_CIRCULAR_ITEMS) {
-            return GRID3_SCALE * mBaselineIconScale;
+        if (mLarge) {
+            return LARGE_SCALE * mBaselineIconScale;
         }
         final float scale;
         if (numItems <= 3 && !Flags.enableLauncherIconShapes()) {

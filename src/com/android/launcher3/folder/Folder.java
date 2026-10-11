@@ -100,7 +100,6 @@ import com.android.launcher3.model.data.ItemInfo;
 import com.android.launcher3.model.data.WorkspaceItemFactory;
 import com.android.launcher3.model.data.WorkspaceItemInfo;
 import com.android.launcher3.pageindicators.PageIndicatorDots;
-import com.android.launcher3.touch.ItemLongClickListener;
 import com.android.launcher3.util.Executors;
 import com.android.launcher3.util.LauncherBindableItemsContainer;
 import com.android.launcher3.util.Thunk;
@@ -211,6 +210,8 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
     private PageIndicatorDots mPageIndicator;
 
     protected View mFooter;
+    /** "Large" / "Small" button in the footer: toggles super folder (2x2) on the desktop. */
+    protected TextView mSizeToggle;
     private int mFooterHeight;
 
     // Cell ranks used for drag and drop
@@ -311,6 +312,10 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
             params.setMarginEnd(horizontalMargin);
         }
         mFooter = findViewById(R.id.folder_footer);
+        mSizeToggle = findViewById(R.id.folder_size_toggle);
+        if (mSizeToggle != null) {
+            mSizeToggle.setOnClickListener(v -> toggleSuperFolder());
+        }
         mFooterHeight = dp.folderFooterHeightPx;
         mFolderName = findViewById(R.id.folder_name);
         mFolderName.setTextSize(TypedValue.COMPLEX_UNIT_PX, dp.folderLabelTextSizePx);
@@ -333,7 +338,9 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         // Return if global dragging is not enabled
         if (!getIsLauncherDraggingEnabled()) {
             // Home screen locked: show the popup instead of dragging, same as on the workspace.
-            ItemLongClickListener.showPopupWithoutDrag(v);
+            if (v instanceof BubbleTextView btv && btv.canShowLongPressPopup()) {
+                btv.startLongPressAction();
+            }
             return true;
         }
         return startDrag(v, new DragOptions());
@@ -406,6 +413,75 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         }
         mIsDragInProgress = false;
         getDragController().removeDragListener(this);
+    }
+
+    private void updateSizeToggle() {
+        if (mSizeToggle == null || mInfo == null) return;
+        boolean onDesktop = mInfo.container
+                == com.android.launcher3.LauncherSettings.Favorites.CONTAINER_DESKTOP;
+        mSizeToggle.setVisibility(onDesktop ? VISIBLE : GONE);
+        mSizeToggle.setText(mFolderIcon != null && mFolderIcon.isSuperFolder() ? "Small" : "Large");
+    }
+
+    /**
+     * Toggles this folder between a normal 1x1 icon and a 2x2 "super folder". Growing needs a free
+     * 2x2 area that includes (or touches) the current cell; nothing else is moved.
+     */
+    private void toggleSuperFolder() {
+        final FolderIcon icon = mFolderIcon;
+        final FolderInfo info = mInfo;
+        if (icon == null || info == null
+                || info.container
+                != com.android.launcher3.LauncherSettings.Favorites.CONTAINER_DESKTOP
+                || !(icon.getParent() instanceof ShortcutAndWidgetContainer)) {
+            return;
+        }
+        final CellLayout cl = (CellLayout) icon.getParent().getParent();
+        final com.android.launcher3.celllayout.CellLayoutLayoutParams lp =
+                (com.android.launcher3.celllayout.CellLayoutLayoutParams) icon.getLayoutParams();
+        final boolean toLarge = !icon.isSuperFolder();
+        int newX = lp.getCellX();
+        int newY = lp.getCellY();
+
+        cl.markCellsAsUnoccupiedForView(icon);
+        if (toLarge) {
+            int[][] origins = {{newX, newY}, {newX - 1, newY}, {newX, newY - 1},
+                    {newX - 1, newY - 1}};
+            boolean found = false;
+            for (int[] o : origins) {
+                if (o[0] >= 0 && o[1] >= 0
+                        && o[0] + 2 <= cl.getCountX() && o[1] + 2 <= cl.getCountY()
+                        && cl.isRegionVacant(o[0], o[1], 2, 2)) {
+                    newX = o[0];
+                    newY = o[1];
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                cl.markCellsAsOccupiedForView(icon);
+                android.widget.Toast.makeText(getContext(),
+                        "Not enough free space (needs a free 2x2 area)",
+                        android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
+        }
+
+        final int span = toLarge ? 2 : 1;
+        lp.setCellX(newX);
+        lp.setCellY(newY);
+        lp.cellHSpan = span;
+        lp.cellVSpan = span;
+        info.spanX = span;
+        info.spanY = span;
+        cl.markCellsAsOccupiedForView(icon);
+
+        close(false);
+        mLauncherDelegate.getModelWriter().modifyItemInDatabase(
+                info, info.container, info.screenId, newX, newY, span, span);
+        icon.onItemsChanged(false);
+        icon.requestLayout();
+        cl.requestLayout();
     }
 
     public void startEditingFolderName() {
@@ -687,6 +763,7 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
      * is played.
      */
     private void animateOpen(List<ItemInfo> items, int pageNo) {
+        updateSizeToggle();
         if (!shouldAnimateOpen(items)) {
             return;
         }
