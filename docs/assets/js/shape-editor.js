@@ -532,14 +532,14 @@
     for (const b of $('se-mirror').querySelectorAll('[data-pivot]')) b.setAttribute('aria-pressed', b.dataset.pivot === pivotMode);
     if (moving) { const c = pivot(shapes[active]); $('se-pivot-mark').setAttribute('transform', `translate(${c.x} ${c.y})`); }
     // The stretch marks: in Move mode on the pivot cross, past the end of its arms; in Edit mode from the
-    // middle of the box, around a dot.
+    // centre of mass, around a dot.
     const info = stretchInfo(shapes[active]);
     $('se-stretch-arrows').setAttribute('d', moving ? stretchArrows(info, 4) : '');
     const editMark = !moving && info && pts;
     $('se-stretch-mark').style.display = editMark ? '' : 'none';
     if (editMark) {
-      const b = measure(lines[active][0]);
-      $('se-stretch-mark').setAttribute('transform', `translate(${b.x + b.width / 2} ${b.y + b.height / 2})`);
+      const c = centroid(shapes[active]);
+      $('se-stretch-mark').setAttribute('transform', `translate(${c.x} ${c.y})`);
       $('se-stretch-mark').querySelector('path').setAttribute('d', stretchArrows(info, 1.6));
     }
 
@@ -725,6 +725,7 @@
       const w = wpt(pts[sel]);
       drag = { kind: 'point', dx: w.x - at.x, dy: w.y - at.y }; // the point keeps its distance from the finger
     } else if (g.move) {
+      pickedCorner = -1; // grabbing the shape itself lets go of the handle, back to the rotation pill
       drag = { kind: 'move', from: at, orig: shapes[active] };
     } else {
       const c = boxHandles(activeBox), anchor = c[opposite(g.resize)];
@@ -797,6 +798,7 @@
       if (e.key === 'Escape') { pickedCorner = -1; e.preventDefault(); return render(); }
       if (!mv) return;
       checkpoint();
+      pickedCorner = -1;
       shapes[active] = transform(shapes[active], 1, 0, 0, mv[0] * step, mv[1] * step);
       sync();
     } else if (sel < 0) return;
@@ -898,12 +900,22 @@
   // Rotation slider: one undo step per drag, and every value is turned from the shape as it was when the
   // drag started, so the points don't pick up rounding from hundreds of small turns.
   let turnFrom = null;
+  // Turning around the middle of the box: that middle moves as the shape turns, so a faded mark stays on
+  // the point the turn pivots around, and fades out shortly after the turn.
+  let ghostTimer = 0;
+  const ghost = (c) => {
+    clearTimeout(ghostTimer);
+    if (pivotMode !== 'box') return;
+    $('se-pivot-ghost').setAttribute('transform', `translate(${c.x} ${c.y})`);
+    $('se-pivot-ghost').classList.remove('off');
+  };
+  const ghostOff = () => { clearTimeout(ghostTimer); ghostTimer = setTimeout(() => $('se-pivot-ghost').classList.add('off'), 800); };
   $('se-turn').addEventListener('input', (e) => {
-    if (!turnFrom) { checkpoint(); turnFrom = shapes[active]; }
+    if (!turnFrom) { checkpoint(); turnFrom = shapes[active]; ghost(pivot(turnFrom)); }
     shapes[active] = rotated(turnFrom, +e.target.value - (turnFrom.rot || 0));
     sync(); render();
   });
-  ['change', 'blur'].forEach((t) => $('se-turn').addEventListener(t, () => (turnFrom = null)));
+  ['change', 'blur'].forEach((t) => $('se-turn').addEventListener(t, () => { turnFrom = null; ghostOff(); }));
   // The icon switches between the slider and typing the angle; any typed angle is wrapped into 0-359.
   $('se-turn-mode').onclick = () => {
     turnTyping = !turnTyping;
@@ -916,6 +928,8 @@
     const deg = ((v - (sh.rot || 0)) % 360 + 360) % 360;
     if (deg < 0.005 || deg > 359.995) return render();
     checkpoint();
+    ghost(pivot(sh));
+    ghostOff();
     shapes[active] = rotated(sh, deg);
     sync(); render();
   });
