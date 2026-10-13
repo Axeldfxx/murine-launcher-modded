@@ -423,16 +423,27 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         mSizeToggle.setText("Style");
     }
 
-    /** Lets the user pick: Small (normal folder) or one of the super folder styles. */
+    /** Lets the user pick: Small (normal folder), a super folder style, or a super folder size. */
     private void showStyleChooser() {
         final FolderIcon icon = mFolderIcon;
         final FolderInfo info = mInfo;
         if (icon == null || info == null) return;
-        final String[] labels = {"Small", "Quadrant", "Grid", "Circle", "Cover"};
-        final int checked = icon.isSuperFolder() ? 1 + info.getSuperStyle() : 0;
+        final boolean sup = icon.isSuperFolder();
+        final int style = info.getSuperStyle();
+        final boolean compact = sup && info.spanY == 1;
+        final boolean big = sup && info.spanY > 1;
+        final String[] labels = {
+                (!sup ? "\u2713 " : "") + "Small",
+                (sup && style == FolderInfo.STYLE_QUADRANT ? "\u2713 " : "") + "Quadrant",
+                (sup && style == FolderInfo.STYLE_GRID ? "\u2713 " : "") + "Grid",
+                (sup && style == FolderInfo.STYLE_CIRCLE ? "\u2713 " : "") + "Circle",
+                (sup && style == FolderInfo.STYLE_COVER ? "\u2713 " : "") + "Cover",
+                (compact ? "\u2713 " : "") + "Size: compact (2x1)",
+                (big ? "\u2713 " : "") + "Size: big (2x2)",
+        };
         new android.app.AlertDialog.Builder(getContext())
                 .setTitle("Folder style")
-                .setSingleChoiceItems(labels, checked, (dialog, which) -> {
+                .setItems(labels, (dialog, which) -> {
                     dialog.dismiss();
                     applyStyleChoice(which);
                 })
@@ -445,12 +456,20 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         final FolderInfo info = mInfo;
         if (icon == null || info == null) return;
         if (which == 0) {
-            if (icon.isSuperFolder()) toggleSuperFolder();
+            if (icon.isSuperFolder()) resizeFolder(1, 1);
+            return;
+        }
+        if (which == 5) {
+            resizeFolder(2, 1);
+            return;
+        }
+        if (which == 6) {
+            resizeFolder(2, 2);
             return;
         }
         if (!icon.isSuperFolder()) {
-            toggleSuperFolder();
-            if (!icon.isSuperFolder()) return; // no free 2x2 area
+            resizeFolder(2, 2); // big by default
+            if (!icon.isSuperFolder()) return; // no free area
         }
         info.setSuperStyle(which - 1, mLauncherDelegate.getModelWriter());
         icon.onItemsChanged(false);
@@ -459,10 +478,10 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
     }
 
     /**
-     * Toggles this folder between a normal 1x1 icon and a 2x2 "super folder". Growing needs a free
-     * 2x2 area that includes (or touches) the current cell; nothing else is moved.
+     * Changes this desktop folder to spanX x spanY cells: 1x1 = normal folder, 2x1 = compact
+     * super folder, 2x2 = big super folder. Needs free cells when growing.
      */
-    private void toggleSuperFolder() {
+    private void resizeFolder(int spanX, int spanY) {
         final FolderIcon icon = mFolderIcon;
         final FolderInfo info = mInfo;
         if (icon == null || info == null
@@ -474,38 +493,30 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         final CellLayout cl = (CellLayout) icon.getParent().getParent();
         final com.android.launcher3.celllayout.CellLayoutLayoutParams lp =
                 (com.android.launcher3.celllayout.CellLayoutLayoutParams) icon.getLayoutParams();
-        final boolean toLarge = !icon.isSuperFolder();
-        // A super folder is 2 cells wide. It is 1 or 2 cells tall, whichever gives a block that
-        // is closest to a square for this grid (cells are often taller than wide, then 2x1 fits
-        // the square folder much better than 2x2 and wastes no space above and below).
-        final float cellRatio = cl.getCellWidth() / (float) Math.max(1, cl.getCellHeight());
-        final int spanY = toLarge ? (cellRatio < 0.707f ? 1 : 2) : 1;
-        final int spanX = toLarge ? 2 : 1;
+        if (lp.cellHSpan == spanX && lp.cellVSpan == spanY) return;
         int newX = lp.getCellX();
         int newY = lp.getCellY();
 
         cl.markCellsAsUnoccupiedForView(icon);
-        if (toLarge) {
-            int[][] origins = {{newX, newY}, {newX - 1, newY}, {newX, newY - 1},
-                    {newX - 1, newY - 1}};
-            boolean found = false;
-            for (int[] o : origins) {
-                if (o[0] >= 0 && o[1] >= 0
-                        && o[0] + spanX <= cl.getCountX() && o[1] + spanY <= cl.getCountY()
-                        && cl.isRegionVacant(o[0], o[1], spanX, spanY)) {
-                    newX = o[0];
-                    newY = o[1];
-                    found = true;
-                    break;
-                }
+        int[][] origins = {{newX, newY}, {newX - 1, newY}, {newX, newY - 1},
+                {newX - 1, newY - 1}};
+        boolean found = false;
+        for (int[] o : origins) {
+            if (o[0] >= 0 && o[1] >= 0
+                    && o[0] + spanX <= cl.getCountX() && o[1] + spanY <= cl.getCountY()
+                    && cl.isRegionVacant(o[0], o[1], spanX, spanY)) {
+                newX = o[0];
+                newY = o[1];
+                found = true;
+                break;
             }
-            if (!found) {
-                cl.markCellsAsOccupiedForView(icon);
-                android.widget.Toast.makeText(getContext(),
-                        "Not enough free space (needs a free " + spanX + "x" + spanY + " area)",
-                        android.widget.Toast.LENGTH_SHORT).show();
-                return;
-            }
+        }
+        if (!found) {
+            cl.markCellsAsOccupiedForView(icon);
+            android.widget.Toast.makeText(getContext(),
+                    "Not enough free space (needs a free " + spanX + "x" + spanY + " area)",
+                    android.widget.Toast.LENGTH_SHORT).show();
+            return;
         }
 
         lp.setCellX(newX);
