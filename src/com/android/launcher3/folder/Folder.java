@@ -475,6 +475,12 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         final com.android.launcher3.celllayout.CellLayoutLayoutParams lp =
                 (com.android.launcher3.celllayout.CellLayoutLayoutParams) icon.getLayoutParams();
         final boolean toLarge = !icon.isSuperFolder();
+        // A super folder is 2 cells wide. It is 1 or 2 cells tall, whichever gives a block that
+        // is closest to a square for this grid (cells are often taller than wide, then 2x1 fits
+        // the square folder much better than 2x2 and wastes no space above and below).
+        final float cellRatio = cl.getCellWidth() / (float) Math.max(1, cl.getCellHeight());
+        final int spanY = toLarge ? (cellRatio < 0.707f ? 1 : 2) : 1;
+        final int spanX = toLarge ? 2 : 1;
         int newX = lp.getCellX();
         int newY = lp.getCellY();
 
@@ -485,8 +491,8 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
             boolean found = false;
             for (int[] o : origins) {
                 if (o[0] >= 0 && o[1] >= 0
-                        && o[0] + 2 <= cl.getCountX() && o[1] + 2 <= cl.getCountY()
-                        && cl.isRegionVacant(o[0], o[1], 2, 2)) {
+                        && o[0] + spanX <= cl.getCountX() && o[1] + spanY <= cl.getCountY()
+                        && cl.isRegionVacant(o[0], o[1], spanX, spanY)) {
                     newX = o[0];
                     newY = o[1];
                     found = true;
@@ -496,24 +502,23 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
             if (!found) {
                 cl.markCellsAsOccupiedForView(icon);
                 android.widget.Toast.makeText(getContext(),
-                        "Not enough free space (needs a free 2x2 area)",
+                        "Not enough free space (needs a free " + spanX + "x" + spanY + " area)",
                         android.widget.Toast.LENGTH_SHORT).show();
                 return;
             }
         }
 
-        final int span = toLarge ? 2 : 1;
         lp.setCellX(newX);
         lp.setCellY(newY);
-        lp.cellHSpan = span;
-        lp.cellVSpan = span;
-        info.spanX = span;
-        info.spanY = span;
+        lp.cellHSpan = spanX;
+        lp.cellVSpan = spanY;
+        info.spanX = spanX;
+        info.spanY = spanY;
         cl.markCellsAsOccupiedForView(icon);
 
         close(false);
         mLauncherDelegate.getModelWriter().modifyItemInDatabase(
-                info, info.container, info.screenId, newX, newY, span, span);
+                info, info.container, info.screenId, newX, newY, spanX, spanY);
         icon.onItemsChanged(false);
         icon.requestLayout();
         cl.requestLayout();
